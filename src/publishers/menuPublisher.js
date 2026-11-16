@@ -7,7 +7,7 @@ const { formatMenuMessage } = require('../utils/formatMenu');
 // in tests — the delivery status it reports is now load-bearing.
 const uptimeKuma = require('../utils/uptimeKuma');
 const { POSTING_TIME } = require('../config/cafeteria');
-const { todayCampus } = require('../utils/campusDate');
+const { todayCampus, isWeekday } = require('../utils/campusDate');
 // The same bar the pre-dawn data check uses for "a usable menu". One or two rows
 // is not a menu: on 2026-11-10 the weekly email had never arrived, so the only
 // row for the day was the monthly Halal dish and Uzumasa subscribers were sent a
@@ -317,6 +317,40 @@ async function publishMenu(client, options = {}) {
   }
 }
 
+/**
+ * Run the publish if the scheduled slot was missed.
+ *
+ * node-schedule only fires while the process is alive: if the bot is down — or
+ * the host is suspended — at 06:00, that day is simply lost. On 2026-11-16 the
+ * service came back at 07:59 with no delivery-log rows for the day and nothing
+ * else to show for it; the menu had to be sent by hand.
+ *
+ * Called once at startup. It stays quiet unless the day is a weekday, the
+ * posting hour has already passed, and *nothing* was delivered today — in that
+ * case it publishes exactly as the scheduled run would, alerts included.
+ *
+ * @param {import('discord.js').Client} client
+ */
+async function catchUpIfMissed(client) {
+  const today = todayCampus();
+  if (!isWeekday(today)) return;
+
+  const hourJst = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', hour12: false }).format(new Date())
+  );
+  if (hourJst < 6) return;
+
+  try {
+    const deliveries = await db.getDeliveriesBetween(today, today);
+    if (deliveries.some((d) => d.status === 'success')) return;
+
+    logger.warn(`⏰ Nothing delivered for ${today} and ${POSTING_TIME} has passed — running the publish now`);
+    await publishMenu(client);
+  } catch (err) {
+    logger.error(`Startup catch-up publish failed: ${err.message}`);
+  }
+}
+
 function start(client) {
   if (scheduledJob) {
     logger.warn('Menu publisher already running, skipping restart');
@@ -341,4 +375,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, publishMenu };
+module.exports = { start, stop, publishMenu, catchUpIfMissed };

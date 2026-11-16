@@ -30,6 +30,12 @@ module.exports = {
     try {
       menuPublisher.start(client);
       logger.info(`📅 Menu publisher scheduled (${POSTING_TIME}, Mon-Fri)`);
+
+      // If the process was down — or the host suspended — when the job was due,
+      // node-schedule never fires and that day is simply lost. Catch it up here.
+      menuPublisher
+        .catchUpIfMissed(client)
+        .catch((error) => logger.error(`Startup catch-up failed: ${error.message}`));
     } catch (error) {
       logger.error(`Failed to start menu publisher: ${error.message}`);
     }

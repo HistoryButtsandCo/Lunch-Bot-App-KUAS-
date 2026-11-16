@@ -4,7 +4,7 @@ const { mock } = require('node:test');
 
 const db = require('../src/db');
 const uptimeKuma = require('../src/utils/uptimeKuma');
-const { publishMenu } = require('../src/publishers/menuPublisher');
+const { publishMenu, catchUpIfMissed } = require('../src/publishers/menuPublisher');
 
 const PUSH_URL = 'https://uptime.example/api/push/token';
 
@@ -101,10 +101,11 @@ function makeClient({ channelMissing = false, canSend = true } = {}) {
 }
 
 /** Install the default happy-path database mocks. Returns recorded calls. */
-function mockDb({ alreadySent = false, items = menuItems(), subs = [subscription()], repair = null, repairError = null, lastKnownPrices = new Map() } = {}) {
+function mockDb({ alreadySent = false, items = menuItems(), subs = [subscription()], repair = null, repairError = null, lastKnownPrices = new Map(), deliveries = [] } = {}) {
   const calls = { deliveryChecks: [], logged: [], repairs: [] };
 
   mock.method(db, 'getActiveSubscriptions', async () => subs);
+  mock.method(db, 'getDeliveriesBetween', async () => deliveries);
   mock.method(db, 'getTodayMenu', async () => items);
   // Recorded with a snapshot of how many menus had been read by this point, so a
   // test can prove the repair runs before the reads rather than after them.
@@ -505,4 +506,27 @@ test('a day with enough items is still posted', async () => {
   await publishMenu(client);
 
   assert.strictEqual(sent.length, 1, 'four items is a usable menu');
+});
+
+// ── A missed posting slot ───────────────────────────────────────────────────
+// On 2026-11-16 the service was down at 06:00 and came back at 07:59 with no
+// delivery rows for the day: nothing to show in the log, no alert, no menu. The
+// startup catch-up now publishes a weekday that never went out.
+
+test('a startup after the posting time publishes a day that never went out', async () => {
+  mockDb({ deliveries: [] });
+  const { client, sent } = makeClient();
+
+  await catchUpIfMissed(client);
+
+  assert.strictEqual(sent.length, 1, 'the missed day should be sent on startup');
+});
+
+test('a startup does not re-publish a day that already went out', async () => {
+  mockDb({ deliveries: [{ status: 'success', campus: 'Uzumasa', menu_date: JST_DATE }] });
+  const { client, sent } = makeClient();
+
+  await catchUpIfMissed(client);
+
+  assert.strictEqual(sent.length, 0);
 });
