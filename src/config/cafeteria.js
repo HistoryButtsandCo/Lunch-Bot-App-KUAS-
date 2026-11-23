@@ -15,9 +15,11 @@
 const POSTING_TIME = '6:00 AM JST';
 
 // The normal (term-time) schedule. During the vacation period these became
-// tickets and service both at 11:30 AM, closing 1:30 PM.
+// tickets and service both at 11:30 AM, closing 1:30 PM. Ticket sales moved to
+// 10:00 AM in November 2026 while service still opens at 11:00 — the two are
+// separate numbers on purpose, students buy early and eat when the kitchen opens.
 const HOURS = {
-  ticketsFrom: '10:30 AM',
+  ticketsFrom: '10:00 AM',
   opens: '11:00 AM',
   closes: '2:00 PM',
 };

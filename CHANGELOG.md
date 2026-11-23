@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
  
 ## [Unreleased]
 
+### Changed
+- **Ticket sales now start at 10:00 AM**, half an hour before they used to. Service
+  still opens at 11:00 and closes at 2:00, so the footer's two times no longer sit
+  as close together; `HOURS.ticketsFrom` in `src/config/cafeteria.js` carries the
+  change and every menu footer, `/nextmenu` and the dashboard follow it.
+
 ### Fixed
 - **A mislabelled Kameoka week is now repaired as a week, not a day.** The
   scrape writes Monday–Friday in one pass, so the 2026-10-19 week landing under

@@ -20,9 +20,9 @@ test('the hours line is built from config, not hardcoded', () => {
 });
 
 test('tickets go on sale before service opens on the normal schedule', () => {
-  // Tickets at 10:30, doors at 11:00 — the term-time hours. Vacation mode had
+  // Tickets at 10:00, doors at 11:00 — the term-time hours. Vacation mode had
   // both at 11:30 and closed at 1:30; this pins the schedule that replaced it.
-  assert.strictEqual(HOURS.ticketsFrom, '10:30 AM');
+  assert.strictEqual(HOURS.ticketsFrom, '10:00 AM');
   assert.strictEqual(HOURS.opens, '11:00 AM');
   assert.strictEqual(HOURS.closes, '2:00 PM');
 });
