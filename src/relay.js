@@ -151,7 +151,7 @@ async function checkWhatsappHealth() {
       await notifyOwner(
         `🔴 **WhatsApp Channel Connection is OFFLINE** (\`${detail}\`)\n` +
           'To turn it back on, run `Start-Lunch-Relay.bat` (or `npm run waha`).\n' +
-          '*(Reminder alerts will also be sent at 7:00 AM, 8:00 AM, 9:00 AM, and every 20 minutes after 9:00 AM until it is back online.)*'
+          '*(Reminder alerts will also be sent at 6:00 AM, 6:30 AM, 7:00 AM, 8:00 AM, 9:00 AM, and every 20 minutes after 9:00 AM until it is back online.)*'
       );
     }
   }
@@ -159,7 +159,7 @@ async function checkWhatsappHealth() {
   if (isOnline) return;
 
   // Check current local time for scheduled offline reminder alerts:
-  // 7:00 AM, 8:00 AM, 9:00 AM, and every 20 mins after 9:00 AM (9:20, 9:40, 10:00, 10:20...)
+  // 6:00 AM, 6:30 AM, 7:00 AM, 8:00 AM, 9:00 AM, and every 20 mins after 9:00 AM (9:20, 9:40, 10:00, 10:20...)
   const now = new Date();
   const hour = now.getHours();
   const minute = now.getMinutes();

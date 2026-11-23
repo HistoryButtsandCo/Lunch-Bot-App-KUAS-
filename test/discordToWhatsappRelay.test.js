@@ -162,8 +162,11 @@ test('attachRelayListener buffers incoming Discord menu chunks and forwards to W
   }
 });
 
-test('isWhatsappOfflineAlertSlot matches 7:00, 8:00, 9:00, and every 20 mins after 9:00 AM', () => {
-  assert.strictEqual(isWhatsappOfflineAlertSlot(6, 0), false);
+test('isWhatsappOfflineAlertSlot matches 6:00, 6:30, 7:00, 8:00, 9:00, and every 20 mins after 9:00 AM', () => {
+  assert.strictEqual(isWhatsappOfflineAlertSlot(5, 30), false);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(6, 0), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(6, 30), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(6, 45), false);
   assert.strictEqual(isWhatsappOfflineAlertSlot(7, 0), true);
   assert.strictEqual(isWhatsappOfflineAlertSlot(7, 20), false);
   assert.strictEqual(isWhatsappOfflineAlertSlot(8, 0), true);

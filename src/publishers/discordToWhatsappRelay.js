@@ -313,8 +313,8 @@ function attachRelayListener(client, options = {}) {
 /**
  * Determine whether the current (hour, minute) matches the WhatsApp offline
  * alert schedule:
- *   - 7:00 AM
- *   - 8:00 AM
+ *   - 6:00 AM, 6:30 AM
+ *   - 7:00 AM, 8:00 AM
  *   - 9:00 AM, and every 20 minutes from 9:00 AM onward (9:00, 9:20, 9:40, 10:00, 10:20, ...)
  *
  * @param {number} hour   0–23
@@ -322,6 +322,7 @@ function attachRelayListener(client, options = {}) {
  * @returns {boolean}
  */
 function isWhatsappOfflineAlertSlot(hour, minute) {
+  if (hour === 6 && (minute === 0 || minute === 30)) return true;
   if (hour === 7 && minute === 0) return true;
   if (hour === 8 && minute === 0) return true;
   if (hour >= 9 && hour <= 23 && minute % 20 === 0) return true;
