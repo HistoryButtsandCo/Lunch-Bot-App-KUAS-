@@ -20,13 +20,17 @@ let scheduledJob = null;
  * Publish today's menus to every active subscriber.
  *
  * @param {import('discord.js').Client} client
- * @param {{manual?: boolean}} [options] `manual` marks a run a human started
+ * @param {{manual?: boolean, campus?: string, channelId?: string}} [options] `manual` marks a run a human started
  *   (publishNow, the dashboard button). Such a run suppresses the health push
  *   and the admin DMs: "menu present, 0 sent" is the *expected* outcome of
  *   re-running once everyone already has today's menu, and it is
  *   indistinguishable from the August failure from in here. Alerting on it
  *   would page someone every time the retry button did its job. The scheduled
  *   run — the one nobody is watching — keeps the signal.
+ *   `campus` and `channelId` narrow the run to those subscriptions only, for
+ *   re-posting one channel (or one campus) without touching the rest. The
+ *   delivery log still records the target, so the scheduled run will not repeat
+ *   it later that day.
  */
 async function publishMenu(client, options = {}) {
   const manual = options.manual === true;
@@ -76,8 +80,31 @@ async function publishMenu(client, options = {}) {
     }
 
     // Get all active subscriptions (now per-campus)
-    const subscriptions = await db.getActiveSubscriptions();
+    let subscriptions = await db.getActiveSubscriptions();
     logger.info(`📤 Found ${subscriptions.length} active subscription(s)`);
+
+    // A narrowed run re-posts one campus or one channel and leaves every other
+    // subscriber alone. It is still a normal publish for the target: same menu,
+    // same role ping, same delivery row, so the scheduled run skips it later.
+    if (options.campus || options.channelId) {
+      const campusFilter = options.campus ? String(options.campus) : null;
+      const channelFilter = options.channelId ? String(options.channelId) : null;
+      const total = subscriptions.length;
+      subscriptions = subscriptions.filter(
+        (sub) =>
+          (!campusFilter || sub.campus === campusFilter) &&
+          (!channelFilter || String(sub.channel_id) === channelFilter)
+      );
+      logger.info(
+        `🎯 Narrowed to ${subscriptions.length} of ${total} subscription(s)` +
+          (campusFilter ? ` · campus=${campusFilter}` : '') +
+          (channelFilter ? ` · channel=${channelFilter}` : '')
+      );
+      if (subscriptions.length === 0) {
+        logger.warn('🎯 Nothing matched that campus/channel — nothing published');
+        return;
+      }
+    }
 
     if (subscriptions.length === 0) {
       logger.info('ℹ️ No active subscriptions, skipping delivery');
