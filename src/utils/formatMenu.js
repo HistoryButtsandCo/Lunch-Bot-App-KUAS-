@@ -111,6 +111,7 @@ const CAMPUS_CONFIG = {
     showSetMealNote: true,
     footerText: buildFooter([
       'Prices are part of a cafeteria discount campaign sponsored by the Student Guardian Association and are available to students only. Faculty and staff members are not eligible for this discounted price.',
+      'Main dishes carry a further ¥70 off under a Kyoto Prefecture subsidy campaign, again for students only. Side dishes and Halal are excluded from it.',
     ]),
     categoryLabels: null,
     menuOrderHasLabels: false,
