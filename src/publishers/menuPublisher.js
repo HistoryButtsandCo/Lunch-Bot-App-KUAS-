@@ -13,6 +13,7 @@ const { todayCampus, isWeekday } = require('../utils/campusDate');
 // row for the day was the monthly Halal dish and Uzumasa subscribers were sent a
 // message containing exactly one item.
 const { MIN_ITEMS_PER_DAY } = require('../utils/dataQuality');
+const whatsappPublisher = require('./whatsappPublisher');
 
 let scheduledJob = null;
 
@@ -77,9 +78,13 @@ async function publishMenu(client, options = {}) {
 
     // Get all active subscriptions (now per-campus)
     const subscriptions = await db.getActiveSubscriptions();
-    logger.info(`📤 Found ${subscriptions.length} active subscription(s)`);
+    const whatsappTargets = whatsappPublisher.getConfig().targets;
+    logger.info(
+      `📤 Found ${subscriptions.length} active Discord subscription(s)` +
+        (whatsappTargets.length > 0 ? ` and ${whatsappTargets.length} WhatsApp target(s)` : '')
+    );
 
-    if (subscriptions.length === 0) {
+    if (subscriptions.length === 0 && whatsappTargets.length === 0) {
       logger.info('ℹ️ No active subscriptions, skipping delivery');
       return;
     }
@@ -232,6 +237,16 @@ async function publishMenu(client, options = {}) {
           failCount++;
         }
       }
+    }
+
+    // Deliver to configured WhatsApp Channels via WAHA
+    for (const target of whatsappTargets) {
+      logger.info(`📱 Processing ${target.campus} Campus for WhatsApp Channel (${target.chatId})`);
+      const result = await whatsappPublisher.publishCampusToWhatsapp(target.campus, target.chatId, { today });
+      if (result.anyMenuAvailable) anyMenuAvailable = true;
+      if (result.status === 'success') successCount++;
+      else if (result.status === 'skipped') skipCount++;
+      else if (result.status === 'failed') failCount++;
     }
 
     logger.info(`📊 Publisher summary: ${successCount} sent, ${skipCount} skipped, ${failCount} failed`);

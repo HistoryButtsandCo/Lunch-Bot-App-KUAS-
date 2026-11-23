@@ -161,10 +161,16 @@ function displaySubcategoryName(entry, config) {
 
 const logger = require('./logger');
 
-function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fallbackPrices = null) {
-  if (!items || items.length === 0) {
-    return ['⚠️ No menu found for today.'];
-  }
+function discordFooterToWhatsapp(footerText) {
+  return String(footerText || '')
+    .replace(/(?<!\*)\*(?!\*)([^*\n]+)(?<!\*)\*(?!\*)/g, '_$1_')
+    .replace(/\*\*([^*\n]+)\*\*/g, '*$1*');
+}
+
+function buildMenuText(items, ratingsMap = new Map(), campus = 'Uzumasa', fallbackPrices = null, platform = 'discord') {
+  const isWhatsapp = platform === 'whatsapp';
+  const bold = (text) => (isWhatsapp ? `*${text}*` : `**${text}**`);
+  const italic = (text) => (isWhatsapp ? `_${text}_` : `*${text}*`);
 
   const config = CAMPUS_CONFIG[campus] || CAMPUS_CONFIG.Uzumasa;
 
@@ -205,8 +211,8 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
     logger.debug(`[formatMenu]   item: campus=${item.campus} category="${item.category}" subcategory="${item.subcategory}" dish="${item.dish_name}"`);
   }
   const groupedKeys = Object.keys(grouped);
-  const menuOrderKeys = config.menuOrder.map(e => e.key);
-  const orphanedKeys = groupedKeys.filter(k => !menuOrderKeys.includes(k));
+  const menuOrderKeys = config.menuOrder.map((e) => e.key);
+  const orphanedKeys = groupedKeys.filter((k) => !menuOrderKeys.includes(k));
   logger.debug(`[formatMenu] grouped keys: ${JSON.stringify(groupedKeys)}`);
   logger.debug(`[formatMenu] menuOrder keys: ${JSON.stringify(menuOrderKeys)}`);
   if (orphanedKeys.length > 0) {
@@ -240,8 +246,15 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
     });
   }
 
-  let message = `# ${config.headerTitle} — ${dayName}, ${menuDate}\n\n`;
-  message += `${ALLERGY_DISCLAIMER}\n\n`;
+  const headerLine = isWhatsapp
+    ? `🍽️ *${config.headerTitle} — ${dayName}, ${menuDate}*`
+    : `# ${config.headerTitle} — ${dayName}, ${menuDate}`;
+
+  const disclaimer = isWhatsapp
+    ? discordFooterToWhatsapp(ALLERGY_DISCLAIMER)
+    : ALLERGY_DISCLAIMER;
+
+  let message = `${headerLine}\n\n${disclaimer}\n\n`;
   let lastCategory = null;
 
   for (const [dCat, section] of sections) {
@@ -259,7 +272,9 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
     // Category header
     if (dCat !== lastCategory) {
       if (lastCategory !== null) message += '\n';
-      message += `## ${section.emoji} ${dCat}${sectionPriceStr}\n`;
+      message += isWhatsapp
+        ? `*${section.emoji} ${dCat}${sectionPriceStr}*\n`
+        : `## ${section.emoji} ${dCat}${sectionPriceStr}\n`;
       lastCategory = dCat;
     }
 
@@ -278,16 +293,16 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
           })();
 
       if (showSubName) {
-        message += `**— ${item.displaySubcategoryName}${subPriceStr} —**\n`;
+        message += `${bold(`— ${item.displaySubcategoryName}${subPriceStr} —`)}\n`;
       }
 
       for (const dish of item.dishes) {
         const ratingInfo = ratingsMap.get(dish.dish_name);
         const ratingBadge = ratingInfo
-          ? ` ⭐ ${ratingInfo.avg.toFixed(1)} *(${ratingInfo.count})*`
+          ? ` ⭐ ${ratingInfo.avg.toFixed(1)} ${italic(`(${ratingInfo.count})`)}`
           : '';
 
-        message += `> ${item.entry.emoji} **${dish.dish_name}**${ratingBadge}\n`;
+        message += `> ${item.entry.emoji} ${bold(dish.dish_name)}${ratingBadge}\n`;
 
         const nutrition = [];
         if (dish.calories) nutrition.push(`${dish.calories} kcal`);
@@ -300,7 +315,7 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
         }
 
         if (dish.allergens) {
-          message += `> ⚠️ *${dish.allergens}*\n`;
+          message += `> ⚠️ ${italic(dish.allergens)}\n`;
         }
 
         message += '\n';
@@ -315,7 +330,17 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
   }
 
   message += '\n━━━━━━━━━━━━━━━━━━━━━━\n';
-  message += config.footerText;
+  message += isWhatsapp ? discordFooterToWhatsapp(config.footerText) : config.footerText;
+
+  return message;
+}
+
+function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fallbackPrices = null) {
+  if (!items || items.length === 0) {
+    return ['⚠️ No menu found for today.'];
+  }
+
+  const message = buildMenuText(items, ratingsMap, campus, fallbackPrices, 'discord');
 
   // Split into chunks under 2000 chars (Discord limit)
   const chunks = [];
@@ -331,6 +356,18 @@ function formatMenuMessage(items, ratingsMap = new Map(), campus = 'Uzumasa', fa
   return chunks;
 }
 
+/**
+ * Formats an array of menu items into a single WhatsApp Channel post using
+ * WhatsApp markdown (*bold*, _italic_, no # heading tokens, single message).
+ */
+function formatMenuForWhatsapp(items, ratingsMap = new Map(), campus = 'Uzumasa', fallbackPrices = null) {
+  if (!items || items.length === 0) {
+    return '⚠️ No menu found for today.';
+  }
+
+  return buildMenuText(items, ratingsMap, campus, fallbackPrices, 'whatsapp');
+}
+
 function getMenuOrderIndex(category, subcategory, campus = 'Uzumasa') {
   const config = CAMPUS_CONFIG[campus] || CAMPUS_CONFIG.Uzumasa;
   return config.menuOrder.findIndex((entry) => {
@@ -339,4 +376,4 @@ function getMenuOrderIndex(category, subcategory, campus = 'Uzumasa') {
   });
 }
 
-module.exports = { formatMenuMessage, getMenuOrderIndex };
+module.exports = { formatMenuMessage, formatMenuForWhatsapp, getMenuOrderIndex };

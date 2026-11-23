@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { formatMenuMessage, getMenuOrderIndex } = require('../src/utils/formatMenu');
+const { formatMenuMessage, formatMenuForWhatsapp, getMenuOrderIndex } = require('../src/utils/formatMenu');
 
 const DISCORD_MAX = 2000;
 // The rate prompt nextmenu/menuPublisher append to the first chunk.
@@ -184,4 +184,28 @@ test('getMenuOrderIndex is campus-aware', () => {
   // Kameoka has its own ordering and no 'Campus Lunch (1)' subcategory.
   assert.strictEqual(getMenuOrderIndex('Set Meals', 'Campus Lunch (1)', 'Kameoka'), -1);
   assert.ok(getMenuOrderIndex('Curry', 'A', 'Kameoka') >= 0);
+});
+
+// ── WhatsApp Channel formatting ──────────────────────────────────────────────
+
+test('formatMenuForWhatsapp returns a single WhatsApp-formatted string without Discord headings', () => {
+  const ratings = new Map([['Beef Cutlet', { avg: 4.5, count: 6 }]]);
+  const text = formatMenuForWhatsapp(
+    [dish({ allergens: 'Milk, Wheat' })],
+    ratings,
+    'Uzumasa'
+  );
+
+  assert.strictEqual(typeof text, 'string');
+  assert.match(text, /^🍽️ \*Uzumasa Campus — Tuesday, 2026-08-18\*/);
+  assert.doesNotMatch(text, /^#/m, 'WhatsApp does not render Markdown # headings');
+  assert.doesNotMatch(text, /\*\*/, 'WhatsApp uses single * for bold, never **');
+  assert.match(text, /> 🥘 \*Beef Cutlet\* ⭐ 4\.5 _\(6\)_/);
+  assert.match(text, /> ⚠️ _Milk, Wheat_/);
+  assert.match(text, /🎫 Tickets from \*10:00 AM\*/);
+});
+
+test('formatMenuForWhatsapp returns placeholder when empty', () => {
+  assert.strictEqual(formatMenuForWhatsapp([]), '⚠️ No menu found for today.');
+  assert.strictEqual(formatMenuForWhatsapp(null), '⚠️ No menu found for today.');
 });

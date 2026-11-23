@@ -193,9 +193,11 @@ function buildOverview({ dates, today, subscriptions = [], menuCounts = [], deli
 }
 
 function normaliseDelivery(row) {
+  const guildId = String(row.guild_id);
+  const defaultName = guildId === '0' ? 'WhatsApp Channel' : `Unknown guild (${row.guild_id})`;
   return {
-    guildId: String(row.guild_id),
-    guildName: row.guild_name || `Unknown guild (${row.guild_id})`,
+    guildId,
+    guildName: row.guild_name || defaultName,
     channelName: row.channel_name || null,
     campus: row.campus,
     status: row.status,

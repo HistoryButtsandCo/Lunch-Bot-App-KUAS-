@@ -1,0 +1,34 @@
+# ============================================================================
+# WAHA (WhatsApp HTTP API) — Self-Hosted Gateway for WhatsApp Channel Posting
+#
+# Run from the project root:
+#   docker compose -f deploy/docker-compose.waha.yml up -d
+#
+# Bound to 127.0.0.1:3001 so it does not collide with the bot's HEALTH_PORT=3000
+# and is not exposed to the public internet.
+# ============================================================================
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: campus-lunch-waha
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - TZ=Asia/Tokyo
+      # NOWEB (WebSocket / Baileys engine) is recommended for WhatsApp Channels
+      # (@newsletter): it supports Channels natively and avoids spawning Chromium.
+      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+      - WAHA_NOWEB_WA_VERSION=auto-web
+      - WHATSAPP_START_SESSION=default
+      - WHATSAPP_RESTART_ALL_SESSIONS=True
+      - WAHA_PRINT_QR=True
+      # Optional: if your WAHA image requires an API key, set it here and put
+      # the same value in WAHA_API_KEY in the bot's .env file.
+      - WHATSAPP_API_KEY=${WAHA_API_KEY:-}
+    volumes:
+      - waha_sessions:/app/.sessions
+
+volumes:
+  waha_sessions:
