@@ -217,6 +217,10 @@ async function catchUpFromDiscordHistory() {
         try {
           await whatsappPublisher.sendText(target.chatId, whatsappText);
           markRelayed(target.campus, today, found.messageId);
+          if (found.messageObj && typeof found.messageObj.react === 'function') {
+            await found.messageObj.react('✅').catch(() => {});
+          }
+          await notifyOwner(`✅ **Sent ${target.campus} Campus menu (${today}) to WhatsApp Channel!**`);
           logger.info(`✅ [Relay] Startup catch-up sent ${target.campus} menu (${today}) to WhatsApp Channel (${target.chatId})`);
         } catch (err) {
           logger.error(`❌ [Relay] Startup catch-up failed for ${target.campus}: ${err.message}`);
@@ -241,7 +245,11 @@ client.once('clientReady', async () => {
   );
 
   await resolveOwnerUserId();
-  attachRelayListener(client);
+  attachRelayListener(client, {
+    onRelayed: async ({ campus, menuDate }) => {
+      await notifyOwner(`✅ **Sent ${campus} Campus menu (${menuDate}) to WhatsApp Channel!**`);
+    },
+  });
 
   // Start WhatsApp health check & Discord status/alert loop (every 20 seconds)
   await checkWhatsappHealth();

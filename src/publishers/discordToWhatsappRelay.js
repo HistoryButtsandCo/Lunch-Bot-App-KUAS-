@@ -136,6 +136,7 @@ function extractLatestMenuFromMessages(messagesNewestFirst, targetCampus = 'Uzum
       header,
       chunks,
       messageId: msg.id || null,
+      messageObj: msg,
     };
   }
 
@@ -197,7 +198,8 @@ function markRelayed(campus, menuDate, messageId = null, stateFile = DEFAULT_STA
  *   sourceBotId?: string|null,
  *   chunkWaitMs?: number,
  *   stateFile?: string,
- *   force?: boolean
+ *   force?: boolean,
+ *   onRelayed?: (info: {campus: string, menuDate: string, chatId: string}) => Promise<void>|void
  * }} [options]
  */
 function attachRelayListener(client, options = {}) {
@@ -221,7 +223,7 @@ function attachRelayListener(client, options = {}) {
     pendingBuffers.delete(bufferKey);
     if (entry.timer) clearTimeout(entry.timer);
 
-    const { header, chunks, messageId } = entry;
+    const { header, chunks, messageId, firstMessage } = entry;
     const { campus, menuDate } = header;
 
     const cfg = whatsappPublisher.getConfig();
@@ -235,6 +237,12 @@ function attachRelayListener(client, options = {}) {
     try {
       await whatsappPublisher.sendText(target.chatId, whatsappText);
       markRelayed(campus, menuDate, messageId, stateFile);
+      if (firstMessage && typeof firstMessage.react === 'function') {
+        await firstMessage.react('✅').catch(() => {});
+      }
+      if (typeof options.onRelayed === 'function') {
+        await Promise.resolve(options.onRelayed({ campus, menuDate, chatId: target.chatId })).catch(() => {});
+      }
       logger.info(`✅ [Relay] Forwarded ${campus} Campus menu (${menuDate}) from Discord → WhatsApp Channel (${target.chatId})`);
     } catch (err) {
       logger.error(`❌ [Relay] Failed to forward ${campus} menu to WhatsApp Channel: ${err.message}`);
@@ -269,6 +277,7 @@ function attachRelayListener(client, options = {}) {
           header,
           chunks: [message.content],
           messageId: message.id || null,
+          firstMessage: message,
           timer: null,
         };
         pendingBuffers.set(bufferKey, entry);

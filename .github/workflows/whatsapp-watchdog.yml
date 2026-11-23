@@ -1,0 +1,30 @@
+name: WhatsApp Offline Cloud Watchdog
+
+on:
+  # Runs on GitHub's cloud servers even when your laptop is completely OFF.
+  # Schedule in JST (UTC+9):
+  #   - 7:00 AM JST (22:00 UTC previous day, Sun-Thu)
+  #   - 8:00 AM JST (23:00 UTC previous day, Sun-Thu)
+  #   - 9:00 AM - 2:40 PM JST every 20 minutes (00:00 - 05:40 UTC, Mon-Fri)
+  schedule:
+    - cron: '0 22,23 * * 0-4'
+    - cron: '0,20,40 0-5 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check if today's menu was sent to WhatsApp (DM owner if offline)
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          BOT_ADMIN_ID: '747445428731117679'
+        run: node scripts/cloudWatchdog.js

@@ -141,6 +141,16 @@ async function run() {
         console.log(`Sending to WhatsApp Channel (${target.chatId}) via WAHA (${cfg.apiUrl})...`);
         await whatsappPublisher.sendText(target.chatId, whatsappText);
         markRelayed(campus, menuDate, found.messageId);
+        if (found.messageObj && typeof found.messageObj.react === 'function') {
+          await found.messageObj.react('✅').catch(() => {});
+        }
+        const ownerId = process.env.BOT_ADMIN_ID || '747445428731117679';
+        const ownerUser = await client.users.fetch(ownerId).catch(() => null);
+        if (ownerUser) {
+          await ownerUser
+            .send({ content: `✅ **Sent ${campus} Campus menu (${menuDate}) to WhatsApp Channel!**` })
+            .catch(() => {});
+        }
         console.log(`🎉 Successfully relayed ${campus} menu (${menuDate}) from Discord → WhatsApp Channel!`);
       }
     } catch (err) {
