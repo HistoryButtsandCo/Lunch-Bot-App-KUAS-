@@ -239,17 +239,26 @@ client.once('clientReady', async () => {
   await catchUpFromDiscordHistory();
 });
 
-process.on('SIGINT', () => {
-  logger.info('📴 Shutting down Discord → WhatsApp Relay...');
-  client.destroy();
+async function gracefulShutdown(signal) {
+  logger.info(`📴 Shutting down Discord → WhatsApp Relay (${signal})...`);
+  try {
+    if (client.user) {
+      client.user.setPresence({
+        status: 'dnd',
+        activities: [{ name: '🔴 WhatsApp: Offline', type: ActivityType.Watching }],
+      });
+    }
+    await client.destroy();
+  } catch {
+    // ignore errors during shutdown
+  }
   process.exit(0);
-});
+}
 
-process.on('SIGTERM', () => {
-  logger.info('📴 Shutting down Discord → WhatsApp Relay (SIGTERM)...');
-  client.destroy();
-  process.exit(0);
-});
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+// On Windows, clicking the 'X' close button on Command Prompt fires SIGHUP
+process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));
 
 client.login(process.env.DISCORD_BOT_TOKEN).catch((err) => {
   logger.error(`❌ Failed to log in to Discord: ${err.message}`);

@@ -59,6 +59,7 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.on('SIGHUP', shutdown);
 
 console.log('============================================================');
 console.log('🍱 Lunch Bot — All-in-One WhatsApp Gateway + Discord Relay');
