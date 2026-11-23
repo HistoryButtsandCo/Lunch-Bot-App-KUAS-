@@ -76,20 +76,23 @@ test('rendered menus pick up the configured hours', () => {
 });
 
 // ── Student discount ─────────────────────────────────────────────────────────
-// The menu PDFs print the visitor/faculty price. Uzumasa students pay that
-// minus the campaign discount; Kameoka runs no campaign. These cases reproduce
-// the prices that were previously hardcoded, from the real PDF listed prices.
+// The menu PDFs print the visitor/faculty price. Uzumasa students pay that minus
+// two stacked campaigns — the association's 100/50 tiers and the ¥70 prefecture
+// subsidy on mains. Kameoka runs neither. These cases reproduce the prices that
+// were previously hardcoded, from the real PDF listed prices.
 
-test('Uzumasa listed prices convert to the previously hardcoded student prices', () => {
+test('Uzumasa listed prices convert to the campaigned student prices', () => {
   const cases = [
     // Confirmed at the cafeteria: a set meal is ¥430 for visitors and staff,
-    // and students pay ¥330 after the ¥100 campaign discount. The PDF prints
-    // two prices for these sections (430 above 500); the scraper takes the lower.
-    ['Set Meals', 430, 330, 'Campus Lunch — 100 off'],
-    ['A La Carte', 430, 330, 'à la carte — 100 off'],
-    ['Curry', 380, 330, 'curry — 50 off'],
-    ['Noodles', 300, 250, 'ramen — 50 off'],
-    ['Noodles', 250, 200, 'udon/soba — 50 off'],
+    // and students pay ¥260 after the ¥100 association discount and the ¥70
+    // subsidy. The PDF prints two prices for these sections (430 above 500);
+    // the scraper takes the lower.
+    ['Set Meals', 430, 260, 'Campus Lunch — 100 + 70 off'],
+    ['A La Carte', 430, 260, 'à la carte — 100 + 70 off'],
+    ['Curry', 380, 260, 'curry — 50 + 70 off'],
+    ['Noodles', 300, 180, 'ramen — 50 + 70 off'],
+    ['Noodles', 250, 130, 'udon/soba — 50 + 70 off'],
+    // ¥70 sides would come out free, so the subsidy does not touch them.
     ['Sides', 70, 70, 'sides — no discount'],
   ];
   for (const [category, listed, expected, label] of cases) {
@@ -135,7 +138,7 @@ test('Uzumasa falls back to the hardcoded table while its scraper has no prices'
       dish_name: 'Beef Cutlet', calories: 498, price: null,
     },
   ]);
-  assert.match(chunk, /¥330/, 'should fall back rather than show no price');
+  assert.match(chunk, /¥260/, 'should fall back rather than show no price');
 });
 
 test('a scraped Uzumasa listed price wins over the fallback table', () => {
@@ -146,9 +149,9 @@ test('a scraped Uzumasa listed price wins over the fallback table', () => {
       dish_name: 'Beef Cutlet', calories: 498, price: 450,
     },
   ]);
-  // 450 listed - 100 student discount = 350, not the hardcoded 330.
-  assert.match(chunk, /¥350/);
-  assert.doesNotMatch(chunk, /¥330/);
+  // 450 listed - 100 association - 70 subsidy = 280, not the hardcoded 260.
+  assert.match(chunk, /¥280/);
+  assert.doesNotMatch(chunk, /¥260/);
 });
 
 test('Kameoka renders its listed price unchanged', () => {
