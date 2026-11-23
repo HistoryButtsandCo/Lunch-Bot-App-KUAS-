@@ -301,12 +301,31 @@ function attachRelayListener(client, options = {}) {
   return { handler, flushBuffer, pendingBuffers };
 }
 
+/**
+ * Determine whether the current (hour, minute) matches the WhatsApp offline
+ * alert schedule:
+ *   - 7:00 AM
+ *   - 8:00 AM
+ *   - 9:00 AM, and every 20 minutes from 9:00 AM onward (9:00, 9:20, 9:40, 10:00, 10:20, ...)
+ *
+ * @param {number} hour   0–23
+ * @param {number} minute 0–59
+ * @returns {boolean}
+ */
+function isWhatsappOfflineAlertSlot(hour, minute) {
+  if (hour === 7 && minute === 0) return true;
+  if (hour === 8 && minute === 0) return true;
+  if (hour >= 9 && hour <= 23 && minute % 20 === 0) return true;
+  return false;
+}
+
 module.exports = {
-   stripDiscordArtifacts,
+  stripDiscordArtifacts,
   parseMenuHeader,
   convertDiscordMenuToWhatsapp,
   extractLatestMenuFromMessages,
   wasAlreadyRelayed,
   markRelayed,
   attachRelayListener,
+  isWhatsappOfflineAlertSlot,
 };

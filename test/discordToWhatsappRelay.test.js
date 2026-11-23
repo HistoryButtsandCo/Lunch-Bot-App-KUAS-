@@ -13,6 +13,7 @@ const {
   convertDiscordMenuToWhatsapp,
   extractLatestMenuFromMessages,
   attachRelayListener,
+  isWhatsappOfflineAlertSlot,
 } = require('../src/publishers/discordToWhatsappRelay');
 
 function sampleDishes(campus = 'Uzumasa') {
@@ -159,4 +160,18 @@ test('attachRelayListener buffers incoming Discord menu chunks and forwards to W
     mock.restoreAll();
     if (fs.existsSync(tmpStateFile)) fs.unlinkSync(tmpStateFile);
   }
+});
+
+test('isWhatsappOfflineAlertSlot matches 7:00, 8:00, 9:00, and every 20 mins after 9:00 AM', () => {
+  assert.strictEqual(isWhatsappOfflineAlertSlot(6, 0), false);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(7, 0), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(7, 20), false);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(8, 0), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(8, 40), false);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(9, 0), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(9, 20), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(9, 40), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(9, 15), false);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(10, 0), true);
+  assert.strictEqual(isWhatsappOfflineAlertSlot(10, 20), true);
 });
