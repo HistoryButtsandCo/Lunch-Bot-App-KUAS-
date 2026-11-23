@@ -82,19 +82,28 @@ async function cmdPair(apiUrl, phoneArg) {
   console.log('\nOnce linked, run: npm run whatsapp:channels');
 }
 
-async function cmdChannels(apiUrl) {
+async function cmdChannels(apiUrl, inviteArg) {
   const session = await ensureSessionStarted(apiUrl);
   if (session.status !== 'WORKING') {
     console.warn(`⚠️ Session status is "${session.status}" (expected "WORKING").`);
-    console.warn('   Link your WhatsApp account first with `npm run whatsapp:pair -- <phone>` or QR scan.');
+    console.warn('   Scan the QR code in the `npm run waha` window or run `npm run whatsapp:pair -- <phone>` first.');
+  }
+
+  let inviteCode = null;
+  if (inviteArg) {
+    const match = String(inviteArg).match(/whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+    inviteCode = match ? match[1] : String(inviteArg).trim();
   }
 
   console.log(`Fetching WhatsApp Channels from WAHA (${apiUrl})...`);
-  const channels = await whatsappPublisher.listChannels(null, { apiUrl });
+  const channels = await whatsappPublisher.listChannels(null, { apiUrl, invite: inviteCode });
 
   if (!Array.isArray(channels) || channels.length === 0) {
-    console.log('ℹ️ No WhatsApp Channels found on this account.');
-    console.log('   Make sure your WhatsApp account owns or is an admin of a WhatsApp Channel.');
+    console.log('ℹ️ No WhatsApp Channels automatically listed yet.');
+    console.log('   👉 Easy shortcut: Copy your WhatsApp Channel Share Link from your phone');
+    console.log('      (e.g. https://whatsapp.com/channel/0029Va...) and either:');
+    console.log('      1) Run: npm run whatsapp:channels -- https://whatsapp.com/channel/YOUR_CODE');
+    console.log('      2) Or paste the link directly as WHATSAPP_CHANNEL_ID in your .env file!');
     return;
   }
 
@@ -122,8 +131,6 @@ async function cmdChannels(apiUrl) {
   console.log(`WHATSAPP_CHANNEL_ID=${picked.id}`);
   console.log('WHATSAPP_CAMPUSES=Uzumasa');
   console.log('---------------------------------------------------------------');
-  console.log('(When you are ready to post both Uzumasa and Kameoka, change');
-  console.log(' WHATSAPP_CAMPUSES=Uzumasa,Kameoka)');
 }
 
 async function main() {
@@ -137,15 +144,15 @@ async function main() {
     } else if (action === 'pair') {
       await cmdPair(apiUrl, arg);
     } else if (action === 'channels') {
-      await cmdChannels(apiUrl);
+      await cmdChannels(apiUrl, arg);
     } else {
       console.error(`Unknown action "${action}". Expected: status | pair | channels`);
       process.exit(1);
     }
   } catch (err) {
     console.error(`❌ Error: ${err.message}`);
-    console.error(`   Make sure WAHA is running (docker compose -f deploy/docker-compose.waha.yml up -d)`);
-    console.error(`   and WAHA_API_URL (${apiUrl}) / WAHA_API_KEY are set in .env if required.`);
+    console.error(`   Make sure the local WAHA gateway is running in another Command Prompt window:`);
+    console.error(`     npm run waha`);
     process.exit(1);
   }
 }

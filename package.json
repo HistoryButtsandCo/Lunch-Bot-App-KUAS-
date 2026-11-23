@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/bot.js",
     "dev": "NODE_ENV=development node src/bot.js",
+    "waha": "node scripts/localWahaServer.js",
     "relay": "node src/relay.js",
     "relay:latest": "node scripts/relayLatestFromDiscord.js",
     "register": "node scripts/registerGlobalCommands.js",
@@ -30,10 +31,13 @@
   "author": "Campus Lunch Pipeline",
   "license": "MIT",
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "discord.js": "^14.14.0",
     "dotenv": "^16.3.1",
     "node-schedule": "^2.1.1",
     "pg": "^8.11.3",
+    "pino": "^10.4.0",
+    "qrcode-terminal": "^0.12.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {

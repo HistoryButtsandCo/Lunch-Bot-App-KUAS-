@@ -41,6 +41,9 @@ function normaliseChannelId(rawId) {
   if (!rawId) return null;
   const trimmed = String(rawId).trim();
   if (!trimmed) return null;
+  const inviteMatch = trimmed.match(/whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+  if (inviteMatch) return `invite:${inviteMatch[1]}`;
+  if (trimmed.startsWith('invite:')) return trimmed;
   if (trimmed.includes('@')) return trimmed;
   return `${trimmed}@newsletter`;
 }
@@ -236,10 +239,13 @@ async function sendText(chatId, text, options = {}) {
 async function listChannels(role = null, options = {}) {
   const cfg = getConfig();
   const session = options.session || cfg.session;
-  const query = role ? `?role=${encodeURIComponent(role)}` : '';
+  const params = new URLSearchParams();
+  if (role) params.set('role', role);
+  if (options.invite) params.set('invite', options.invite);
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return whatsappPublisher.requestWaha(
     'GET',
-    `/api/${encodeURIComponent(session)}/channels${query}`,
+    `/api/${encodeURIComponent(session)}/channels${qs}`,
     null,
     options
   );
