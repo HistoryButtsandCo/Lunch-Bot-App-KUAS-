@@ -231,11 +231,6 @@ function attachRelayListener(client, options = {}) {
       return;
     }
 
-    if (!options.force && wasAlreadyRelayed(campus, menuDate, stateFile)) {
-      logger.info(`⏭️  [Relay] ${campus} menu for ${menuDate} was already relayed to WhatsApp — skipping duplicate`);
-      return;
-    }
-
     const whatsappText = convertDiscordMenuToWhatsapp(chunks);
     try {
       await whatsappPublisher.sendText(target.chatId, whatsappText);

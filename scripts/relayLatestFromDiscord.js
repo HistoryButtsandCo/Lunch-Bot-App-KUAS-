@@ -24,7 +24,6 @@ const whatsappPublisher = require('../src/publishers/whatsappPublisher');
 const {
   extractLatestMenuFromMessages,
   convertDiscordMenuToWhatsapp,
-  wasAlreadyRelayed,
   markRelayed,
 } = require('../src/publishers/discordToWhatsappRelay');
 
@@ -136,11 +135,6 @@ async function run() {
           console.log('\n--- WhatsApp Preview ---\n');
           console.log(whatsappText);
           console.log('\n------------------------\n');
-          continue;
-        }
-
-        if (!opts.force && wasAlreadyRelayed(campus, menuDate)) {
-          console.log(`⏭️  ${campus} menu for ${menuDate} was already relayed (pass --force to re-send).`);
           continue;
         }
 
