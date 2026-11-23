@@ -56,34 +56,30 @@ const client = new Client({
   ],
 });
 
-let resolvedAdminUserId = process.env.BOT_ADMIN_ID || null;
+const DEFAULT_OWNER_DISCORD_ID = '747445428731117679';
+let resolvedAdminUserId = process.env.BOT_ADMIN_ID || DEFAULT_OWNER_DISCORD_ID;
 let lastKnownWhatsappOnline = null;
 let lastAlertSlotKey = null;
-let hadOfflineAlertSent = false;
+let startupCheckCount = 0;
 
 /**
- * Resolve the Discord User ID to DM on WhatsApp offline alerts.
- * Uses BOT_ADMIN_ID from .env if set; otherwise auto-detects the owner of the
- * Discord Bot Application from the Discord API.
+ * Resolve the Discord User ID to DM on WhatsApp online/offline alerts.
+ * Defaults to 747445428731117679 (or BOT_ADMIN_ID in .env).
  */
 async function resolveOwnerUserId() {
   if (resolvedAdminUserId) return resolvedAdminUserId;
   try {
     await client.application?.fetch();
     const owner = client.application?.owner;
-    // owner can be a User (owner.id) or a Team (owner.ownerId)
-    resolvedAdminUserId = owner?.id || owner?.ownerId || null;
-    if (resolvedAdminUserId) {
-      logger.info(`👤 Auto-detected Discord bot owner for WhatsApp status alerts: ${resolvedAdminUserId}`);
-    }
-  } catch (err) {
-    logger.warn(`Could not auto-detect Discord application owner: ${err.message}`);
+    resolvedAdminUserId = owner?.id || owner?.ownerId || DEFAULT_OWNER_DISCORD_ID;
+  } catch {
+    resolvedAdminUserId = DEFAULT_OWNER_DISCORD_ID;
   }
   return resolvedAdminUserId;
 }
 
 /**
- * Send a DM to the bot owner.
+ * Send a DM to the bot owner (747445428731117679).
  */
 async function notifyOwner(content) {
   const userId = await resolveOwnerUserId();
@@ -100,9 +96,11 @@ async function notifyOwner(content) {
 
 /**
  * Check whether WAHA is reachable and the WhatsApp session is WORKING.
- * Updates the Discord bot's status bar and triggers scheduled offline DMs.
+ * Updates the Discord bot's status bar, sends immediate DMs when WhatsApp goes
+ * online or offline, and sends scheduled reminder DMs while offline.
  */
 async function checkWhatsappHealth() {
+  startupCheckCount++;
   let isOnline = false;
   let detail = 'Offline';
 
@@ -119,7 +117,14 @@ async function checkWhatsappHealth() {
     detail = 'WAHA not running';
   }
 
-  // Update Discord bot presence/status whenever it changes (or on first check)
+  // On the very first check right after launch, if WAHA is still booting up,
+  // wait a few seconds before declaring it offline.
+  if (!isOnline && lastKnownWhatsappOnline === null && startupCheckCount === 1 && detail === 'STARTING') {
+    setTimeout(checkWhatsappHealth, 4000);
+    return;
+  }
+
+  // Update Discord bot presence/status and DM the owner whenever state changes
   if (client.user && isOnline !== lastKnownWhatsappOnline) {
     try {
       client.user.setPresence({
@@ -135,17 +140,25 @@ async function checkWhatsappHealth() {
       // ignore presence error
     }
 
-    if (isOnline && hadOfflineAlertSent) {
-      hadOfflineAlertSent = false;
-      await notifyOwner('🟢 **WhatsApp Connection Restored!**\nThe WhatsApp Channel bridge (`waha`) is back online and ready to post menus.');
-    }
-
     lastKnownWhatsappOnline = isOnline;
+
+    if (isOnline) {
+      await notifyOwner(
+        '🟢 **WhatsApp Channel Bot is ONLINE!**\n' +
+          'The WhatsApp bridge is connected and watching Discord for menus.'
+      );
+    } else {
+      await notifyOwner(
+        `🔴 **WhatsApp Channel Connection is OFFLINE** (\`${detail}\`)\n` +
+          'To turn it back on, run `Start-Lunch-Relay.bat` (or `npm run waha`).\n' +
+          '*(Reminder alerts will also be sent at 7:00 AM, 8:00 AM, 9:00 AM, and every 20 minutes after 9:00 AM until it is back online.)*'
+      );
+    }
   }
 
   if (isOnline) return;
 
-  // Check current local time for scheduled offline alerts:
+  // Check current local time for scheduled offline reminder alerts:
   // 7:00 AM, 8:00 AM, 9:00 AM, and every 20 mins after 9:00 AM (9:20, 9:40, 10:00, 10:20...)
   const now = new Date();
   const hour = now.getHours();
@@ -155,14 +168,12 @@ async function checkWhatsappHealth() {
 
   if (isWhatsappOfflineAlertSlot(hour, minute) && lastAlertSlotKey !== slotKey) {
     lastAlertSlotKey = slotKey;
-    hadOfflineAlertSent = true;
     const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     logger.warn(`🚨 WhatsApp is offline (${detail}) at ${timeLabel} — sending alert DM to owner`);
     await notifyOwner(
-      `🔴 **WhatsApp Channel Connection is OFFLINE** (${timeLabel})\n` +
+      `🔴 **Reminder: WhatsApp Channel Connection is still OFFLINE** (${timeLabel})\n` +
         `Status: \`${detail}\`\n` +
-        `To turn it back on, run \`Start-Lunch-Relay.bat\` (or \`npm run waha\`).\n` +
-        `*(Alerts run at 7:00 AM, 8:00 AM, 9:00 AM, and every 20 minutes after 9:00 AM until WhatsApp is back online.)*`
+        'To turn it back on, run `Start-Lunch-Relay.bat` (or `npm run waha`).'
     );
   }
 }
@@ -239,7 +250,10 @@ client.once('clientReady', async () => {
   await catchUpFromDiscordHistory();
 });
 
+let shuttingDown = false;
 async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info(`📴 Shutting down Discord → WhatsApp Relay (${signal})...`);
   try {
     if (client.user) {
@@ -247,6 +261,7 @@ async function gracefulShutdown(signal) {
         status: 'dnd',
         activities: [{ name: '🔴 WhatsApp: Offline', type: ActivityType.Watching }],
       });
+      await notifyOwner('🔴 **WhatsApp Channel Bot is now OFFLINE** (relay process stopped).');
     }
     await client.destroy();
   } catch {
