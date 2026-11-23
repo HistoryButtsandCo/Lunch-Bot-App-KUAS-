@@ -98,7 +98,7 @@ async function catchUpFromDiscordHistory() {
   }
 }
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   const watchIds = (process.env.RELAY_DISCORD_CHANNEL_ID || '')
     .split(',')
     .map((s) => s.trim())

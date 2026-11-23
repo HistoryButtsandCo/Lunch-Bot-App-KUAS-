@@ -91,7 +91,7 @@ async function run() {
     ],
   });
 
-  client.once('ready', async () => {
+  client.once('clientReady', async () => {
     console.log(`Logged into Discord as ${client.user.tag}`);
 
     try {
