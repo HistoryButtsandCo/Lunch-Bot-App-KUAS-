@@ -93,14 +93,26 @@ async function run() {
     throw new Error('Could not open DM channel with owner');
   }
 
-  // Fetch recent messages in the DM channel to see if today's menu was already relayed
+  // Fetch recent messages in the DM channel to see if the bot is offline or today's menu was already relayed
   const messages = await discordRest('GET', `/channels/${dmChannel.id}/messages?limit=30`);
   const alreadySentPattern = new RegExp(`Sent .+ menu \\(${today}\\) to WhatsApp Channel`, 'i');
 
-  const alreadySentToday = Array.isArray(messages) && messages.some((m) => alreadySentPattern.test(m.content || ''));
+  // Check if the most recent status transition DM says the bot is currently OFFLINE
+  const latestStatusMsg = Array.isArray(messages)
+    ? messages.find((m) =>
+        /WhatsApp Channel (?:Bot|Connection) is (?:now )?(?:ONLINE|OFFLINE)|WhatsApp Connection Restored/i.test(
+          m.content || ''
+        )
+      )
+    : null;
+  const isCurrentlyMarkedOffline =
+    latestStatusMsg && /OFFLINE/i.test(latestStatusMsg.content || '');
 
-  if (alreadySentToday && !force) {
-    console.log(`✅ Today's menu (${today}) was already sent to the WhatsApp Channel — no reminder needed.`);
+  const alreadySentToday =
+    Array.isArray(messages) && messages.some((m) => alreadySentPattern.test(m.content || ''));
+
+  if (alreadySentToday && !isCurrentlyMarkedOffline && !force) {
+    console.log(`✅ Today's menu (${today}) was already sent and bot is not marked offline — no reminder needed.`);
     return;
   }
 
