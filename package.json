@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/bot.js",
     "dev": "NODE_ENV=development node src/bot.js",
+    "relay": "node src/relay.js",
+    "relay:latest": "node scripts/relayLatestFromDiscord.js",
     "register": "node scripts/registerGlobalCommands.js",
     "publishNow": "node scripts/publishNow.js",
     "whatsapp:status": "node scripts/whatsappSetup.js status",
