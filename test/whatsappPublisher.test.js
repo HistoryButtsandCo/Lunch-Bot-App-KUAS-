@@ -97,6 +97,19 @@ test('getConfig supports posting both campuses to the same WhatsApp Channel', ()
   ]);
 });
 
+test('getConfig auto-enables Kameoka when WHATSAPP_CHANNEL_ID_KAMEOKA is set even if WHATSAPP_CAMPUSES=Uzumasa', () => {
+  process.env.WAHA_API_URL = 'http://localhost:3001';
+  process.env.WHATSAPP_CHANNEL_ID = '120363432234120398@newsletter';
+  process.env.WHATSAPP_CAMPUSES = 'Uzumasa';
+  process.env.WHATSAPP_CHANNEL_ID_KAMEOKA = '120363999888777666@newsletter';
+
+  const cfg = whatsappPublisher.getConfig();
+  assert.deepStrictEqual(cfg.targets, [
+    { campus: 'Uzumasa', chatId: '120363432234120398@newsletter' },
+    { campus: 'Kameoka', chatId: '120363999888777666@newsletter' },
+  ]);
+});
+
 test('publishMenu posts both to Discord and to the WhatsApp Channel via WAHA', async () => {
   process.env.WAHA_API_URL = 'http://localhost:3001';
   process.env.WHATSAPP_CHANNEL_ID = '120363111222333444@newsletter';

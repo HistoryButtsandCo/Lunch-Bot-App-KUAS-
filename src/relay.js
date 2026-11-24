@@ -28,6 +28,8 @@ const {
   convertDiscordMenuToWhatsapp,
   wasAlreadyRelayed,
   markRelayed,
+  resolveRelayChannelIds,
+  discoverCandidateChannelIds,
   isWhatsappOfflineAlertSlot,
 } = require('./publishers/discordToWhatsappRelay');
 const { todayCampus } = require('./utils/campusDate');
@@ -126,12 +128,16 @@ async function checkWhatsappHealth() {
 
   // Update Discord bot presence/status and DM the owner whenever state changes
   if (client.user && isOnline !== lastKnownWhatsappOnline) {
+    const activeCampuses = whatsappPublisher.getConfig().targets.map((t) => t.campus);
+    const campusLabel = activeCampuses.length > 0 ? ` (${activeCampuses.join(' + ')})` : '';
     try {
       client.user.setPresence({
         status: isOnline ? 'online' : 'dnd',
         activities: [
           {
-            name: isOnline ? '🟢 WhatsApp: Online' : `🔴 WhatsApp: Offline (${detail})`,
+            name: isOnline
+              ? `🟢 WhatsApp: Online${campusLabel}`
+              : `🔴 WhatsApp: Offline (${detail})`,
             type: ActivityType.Watching,
           },
         ],
@@ -143,9 +149,14 @@ async function checkWhatsappHealth() {
     lastKnownWhatsappOnline = isOnline;
 
     if (isOnline) {
+      const targetSummary = whatsappPublisher
+        .getConfig()
+        .targets.map((t) => `• **${t.campus}** → \`${t.chatId}\``)
+        .join('\n');
       await notifyOwner(
         '🟢 **WhatsApp Channel Bot is ONLINE!**\n' +
-          'The WhatsApp bridge is connected and watching Discord for menus.'
+          'The WhatsApp bridge is connected and watching Discord for menus:\n' +
+          targetSummary
       );
     } else {
       await notifyOwner(
@@ -179,40 +190,41 @@ async function checkWhatsappHealth() {
 }
 
 /**
- * On startup, check watched Discord channels to see if today's menu was
- * already posted while the relay was offline, and forward it if not yet sent.
+ * On startup, check watched/discovered Discord channels for each configured
+ * campus (Uzumasa, Kameoka) to see if today's menu was already posted while
+ * the relay was offline, and forward it if not yet sent.
  */
 async function catchUpFromDiscordHistory() {
-  const channelIds = (process.env.RELAY_DISCORD_CHANNEL_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (channelIds.length === 0) return;
-
   const today = todayCampus();
+  const fetchedChannelCache = new Map();
 
-  for (const channelId of channelIds) {
+  async function getRecentMessages(channelId) {
+    if (fetchedChannelCache.has(channelId)) return fetchedChannelCache.get(channelId);
     const channel = await client.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.messages) {
-      logger.warn(`⚠️ [Relay] Could not fetch Discord channel ${channelId} — check RELAY_DISCORD_CHANNEL_ID and bot permissions`);
-      continue;
+      fetchedChannelCache.set(channelId, null);
+      return null;
     }
-
-    const fetched = await channel.messages.fetch({ limit: 25 }).catch((err) => {
+    const fetched = await channel.messages.fetch({ limit: 30 }).catch((err) => {
       logger.warn(`⚠️ [Relay] Could not read message history in #${channel.name || channelId}: ${err.message}`);
       return null;
     });
-    if (!fetched) continue;
+    const list = fetched ? [...fetched.values()] : null;
+    fetchedChannelCache.set(channelId, list);
+    return list;
+  }
 
-    const messages = [...fetched.values()];
+  for (const target of whatsappPublisher.getConfig().targets) {
+    if (wasAlreadyRelayed(target.campus, today)) continue;
 
-    for (const target of whatsappPublisher.getConfig().targets) {
-      if (wasAlreadyRelayed(target.campus, today)) continue;
+    const candidateChannelIds = discoverCandidateChannelIds(client, target.campus);
+    for (const channelId of candidateChannelIds) {
+      const messages = await getRecentMessages(channelId);
+      if (!messages) continue;
 
       const found = extractLatestMenuFromMessages(messages, target.campus);
       if (found && found.header.menuDate === today) {
-        logger.info(`⏰ [Relay] Found today's ${target.campus} menu (${today}) in Discord history — relaying now`);
+        logger.info(`⏰ [Relay] Found today's ${target.campus} menu (${today}) in Discord channel ${channelId} — relaying now`);
         const whatsappText = convertDiscordMenuToWhatsapp(found.chunks);
         try {
           await whatsappPublisher.sendText(target.chatId, whatsappText);
@@ -225,23 +237,22 @@ async function catchUpFromDiscordHistory() {
         } catch (err) {
           logger.error(`❌ [Relay] Startup catch-up failed for ${target.campus}: ${err.message}`);
         }
+        break;
       }
     }
   }
 }
 
 client.once('clientReady', async () => {
-  const watchIds = (process.env.RELAY_DISCORD_CHANNEL_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const watchIds = resolveRelayChannelIds();
+  const activeTargets = whatsappPublisher.getConfig().targets;
 
   logger.info(`🤖 Discord → WhatsApp Relay logged in as ${client.user.tag}`);
   logger.info(
-    `👀 Watching Discord channel(s): ${watchIds.length > 0 ? watchIds.join(', ') : 'ALL accessible channels'}`
+    `👀 Watching Discord channel(s): ${watchIds.length > 0 ? watchIds.join(', ') + ' (+ bot posts in server)' : 'ALL accessible channels'}`
   );
   logger.info(
-    `📱 Forwarding to WhatsApp target(s): ${cfg.targets.map((t) => `${t.campus} → ${t.chatId}`).join(', ')}`
+    `📱 Forwarding to WhatsApp target(s): ${activeTargets.map((t) => `${t.campus} → ${t.chatId}`).join(', ')}`
   );
 
   await resolveOwnerUserId();

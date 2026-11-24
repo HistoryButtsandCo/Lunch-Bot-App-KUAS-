@@ -28,4 +28,5 @@ jobs:
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           BOT_ADMIN_ID: '747445428731117679'
+          WATCHDOG_CAMPUSES: ${{ vars.WATCHDOG_CAMPUSES }}
         run: node scripts/cloudWatchdog.js

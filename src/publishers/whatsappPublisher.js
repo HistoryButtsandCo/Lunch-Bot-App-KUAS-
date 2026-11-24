@@ -79,32 +79,49 @@ function channelIdToDbBigint(chatId) {
  *   targets: Array<{campus: string, chatId: string}>
  * }}
  */
+function canonicalCampusName(raw) {
+  const lower = String(raw || '').trim().toLowerCase();
+  if (lower === 'uzumasa') return 'Uzumasa';
+  if (lower === 'kameoka') return 'Kameoka';
+  return String(raw || '').trim();
+}
+
 function getConfig() {
   const apiUrl = (process.env.WAHA_API_URL || '').trim().replace(/\/+$/, '');
   const apiKey = (process.env.WAHA_API_KEY || '').trim() || null;
   const session = (process.env.WAHA_SESSION || 'default').trim() || 'default';
 
   const defaultChannel = normaliseChannelId(process.env.WHATSAPP_CHANNEL_ID);
-  const explicitCampuses = (process.env.WHATSAPP_CAMPUSES || '')
-    .split(',')
-    .map((c) => c.trim())
-    .filter(Boolean);
+  const rawCampuses = (process.env.WHATSAPP_CAMPUSES || '').trim();
 
-  const campuses = explicitCampuses;
-  if (campuses.length === 0) {
-    // Default to Uzumasa first when a channel is configured; also include
-    // Kameoka if WHATSAPP_CHANNEL_ID_KAMEOKA is explicitly set.
-    if (process.env.WHATSAPP_CHANNEL_ID_UZUMASA || defaultChannel) {
-      campuses.push('Uzumasa');
+  const campusSet = new Set();
+  if (rawCampuses.toLowerCase() === 'all' || rawCampuses.toLowerCase() === 'both') {
+    campusSet.add('Uzumasa');
+    campusSet.add('Kameoka');
+  } else if (rawCampuses) {
+    for (const part of rawCampuses.split(',')) {
+      const c = canonicalCampusName(part);
+      if (c) campusSet.add(c);
     }
-    if (process.env.WHATSAPP_CHANNEL_ID_KAMEOKA) {
-      campuses.push('Kameoka');
-    }
+  }
+
+  // Always auto-enable a campus when its dedicated WHATSAPP_CHANNEL_ID_<CAMPUS>
+  // env var is explicitly configured, even if WHATSAPP_CAMPUSES only listed Uzumasa.
+  if (normaliseChannelId(process.env.WHATSAPP_CHANNEL_ID_UZUMASA)) {
+    campusSet.add('Uzumasa');
+  }
+  if (normaliseChannelId(process.env.WHATSAPP_CHANNEL_ID_KAMEOKA)) {
+    campusSet.add('Kameoka');
+  }
+
+  // Fallback when WHATSAPP_CAMPUSES is unset and only WHATSAPP_CHANNEL_ID is set
+  if (campusSet.size === 0 && defaultChannel) {
+    campusSet.add('Uzumasa');
   }
 
   const targets = [];
   if (apiUrl) {
-    for (const campus of campuses) {
+    for (const campus of campusSet) {
       const envKey = `WHATSAPP_CHANNEL_ID_${campus.toUpperCase()}`;
       const chatId = normaliseChannelId(process.env[envKey]) || defaultChannel;
       if (chatId) {

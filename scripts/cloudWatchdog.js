@@ -3,16 +3,12 @@
  * scripts/cloudWatchdog.js
  *
  * Runs on GitHub's free cloud servers (via `.github/workflows/whatsapp-watchdog.yml`)
- * at 7:00 AM, 8:00 AM, 9:00 AM, and every 20 minutes after 9:00 AM JST — even when
- * the user's laptop is completely powered OFF.
+ * at 6:00 AM, 6:30 AM, 7:00 AM, 8:00 AM, 9:00 AM, and every 20 minutes after
+ * 9:00 AM JST — even when the user's laptop is completely powered OFF.
  *
  * Uses Discord's HTTP REST API (no WebSocket gateway login, so it never kicks
  * the laptop's live bot connection offline) to check the DM history with
- * Discord user 747445428731117679:
- *   - If today's menu was already sent to WhatsApp (`Sent ... menu (YYYY-MM-DD) to WhatsApp Channel`),
- *     exits quietly.
- *   - Otherwise, sends a Discord DM reminder to 747445428731117679 that today's
- *     menu has not gone out yet and the laptop/bot appears to be offline.
+ * Discord user 747445428731117679 for all active campuses (Uzumasa & Kameoka).
  */
 
 const https = require('https');
@@ -67,12 +63,39 @@ function discordRest(method, endpoint, body = null) {
   });
 }
 
+/**
+ * Determine which campuses (`Uzumasa`, `Kameoka`, or both) should be checked:
+ * 1. Explicit `WATCHDOG_CAMPUSES` env var if provided
+ * 2. Otherwise inferred from the latest `WhatsApp Channel Bot is ONLINE!` DM
+ * 3. Fallback to `['Uzumasa']`
+ */
+function resolveExpectedCampuses(messages) {
+  const explicit = (process.env.WATCHDOG_CAMPUSES || '').trim();
+  if (explicit) {
+    return explicit
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(messages)) {
+    const latestOnlineMsg = messages.find((m) =>
+      /WhatsApp Channel Bot is ONLINE/i.test(m.content || '')
+    );
+    if (latestOnlineMsg?.content) {
+      const detected = [];
+      if (/Uzumasa/i.test(latestOnlineMsg.content)) detected.push('Uzumasa');
+      if (/Kameoka/i.test(latestOnlineMsg.content)) detected.push('Kameoka');
+      if (detected.length > 0) return detected;
+    }
+  }
+
+  return ['Uzumasa'];
+}
+
 async function run() {
   if (!TOKEN) {
     console.log('ℹ️ DISCORD_BOT_TOKEN is not set in GitHub Actions Secrets yet — skipping watchdog check.');
-    console.log('   To enable cloud offline alerts when your laptop is off:');
-    console.log('   Go to your GitHub repo → Settings → Secrets and variables → Actions → New repository secret');
-    console.log('   Name: DISCORD_BOT_TOKEN   Value: <your Discord bot token>');
     return;
   }
 
@@ -93,9 +116,9 @@ async function run() {
     throw new Error('Could not open DM channel with owner');
   }
 
-  // Fetch recent messages in the DM channel to see if the bot is offline or today's menu was already relayed
-  const messages = await discordRest('GET', `/channels/${dmChannel.id}/messages?limit=30`);
-  const alreadySentPattern = new RegExp(`Sent .+ menu \\(${today}\\) to WhatsApp Channel`, 'i');
+  // Fetch recent messages in the DM channel
+  const messages = await discordRest('GET', `/channels/${dmChannel.id}/messages?limit=40`);
+  const expectedCampuses = resolveExpectedCampuses(messages);
 
   // Check if the most recent status transition DM says the bot is currently OFFLINE
   const latestStatusMsg = Array.isArray(messages)
@@ -108,11 +131,15 @@ async function run() {
   const isCurrentlyMarkedOffline =
     latestStatusMsg && /OFFLINE/i.test(latestStatusMsg.content || '');
 
-  const alreadySentToday =
-    Array.isArray(messages) && messages.some((m) => alreadySentPattern.test(m.content || ''));
+  const missingCampuses = expectedCampuses.filter((campus) => {
+    const pattern = new RegExp(`Sent ${campus} Campus menu \\(${today}\\) to WhatsApp Channel`, 'i');
+    return !(Array.isArray(messages) && messages.some((m) => pattern.test(m.content || '')));
+  });
 
-  if (alreadySentToday && !isCurrentlyMarkedOffline && !force) {
-    console.log(`✅ Today's menu (${today}) was already sent and bot is not marked offline — no reminder needed.`);
+  if (missingCampuses.length === 0 && !isCurrentlyMarkedOffline && !force) {
+    console.log(
+      `✅ Today's menu (${today}) was already sent for [${expectedCampuses.join(', ')}] and bot is online — no reminder needed.`
+    );
     return;
   }
 
@@ -123,13 +150,18 @@ async function run() {
     hour12: false,
   }).format(new Date());
 
-  console.log(`🚨 Today's menu (${today}) has not been sent to WhatsApp yet (${timeJst} JST) — sending DM reminder to ${OWNER_DISCORD_ID}`);
+  const missingDetail =
+    missingCampuses.length > 0
+      ? `Today's menu (**${today}**) has **not** been sent yet for: **${missingCampuses.join(' & ')}**.`
+      : `Today's menu (**${today}**) went out earlier, and your WhatsApp relay is currently **OFFLINE**.`;
+
+  console.log(`🚨 Watchdog alert at ${timeJst} JST — sending DM reminder to ${OWNER_DISCORD_ID}`);
 
   await discordRest('POST', `/channels/${dmChannel.id}/messages`, {
     content:
       `🔴 **Cloud Watchdog Reminder (${timeJst} JST)**\n` +
-      `Today's menu (**${today}**) has **not** been sent to your WhatsApp Channel yet — your laptop or WhatsApp bridge appears to be **OFFLINE**.\n` +
-      `👉 Turn on your laptop (or double-click **\`WhatsApp Lunch Relay\`** on your Desktop) and it will automatically catch up and post today's menu!`,
+      `${missingDetail}\n` +
+      `👉 Turn on your laptop (or double-click **\`WhatsApp Lunch Relay\`** on your Desktop) so the bot reconnects and posts any pending menus!`,
   });
 
   console.log('✅ Reminder DM sent.');

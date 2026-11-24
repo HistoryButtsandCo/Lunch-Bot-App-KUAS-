@@ -3,17 +3,16 @@
  * scripts/relayLatestFromDiscord.js
  *
  * One-shot command for Path C (Discord → WhatsApp Channel Relay):
- * Reads the most recent menu message already posted in your Discord channel
- * (`RELAY_DISCORD_CHANNEL_ID`), converts it to WhatsApp Markdown, and posts it
- * immediately to your WhatsApp Channel via WAHA.
- *
- * Ideal for testing tonight without waiting for tomorrow's 6:00 AM JST post!
+ * Reads the most recent menu message(s) posted in your Discord server
+ * (both Uzumasa and Kameoka, or a specific campus), converts them to WhatsApp
+ * Markdown, and posts them immediately to your WhatsApp Channel(s) via WAHA.
  *
  * Usage:
- *   npm run relay:latest                     — Fetch latest Uzumasa menu from Discord & post to WhatsApp
- *   npm run relay:latest -- --dry-run        — Fetch from Discord & preview WhatsApp format in terminal
- *   npm run relay:latest -- --force          — Send even if that date was already relayed
- *   npm run relay:latest -- --campus Kameoka — Fetch latest Kameoka menu instead
+ *   npm run relay:latest                     — Relay all configured campuses (Uzumasa & Kameoka)
+ *   npm run relay:latest -- --campus Kameoka — Relay latest Kameoka menu only
+ *   npm run relay:latest -- --campus Uzumasa — Relay latest Uzumasa menu only
+ *   npm run relay:latest -- --campus all     — Relay both Uzumasa and Kameoka
+ *   npm run relay:latest -- --dry-run        — Preview WhatsApp format in terminal without sending
  */
 
 const path = require('path');
@@ -25,6 +24,7 @@ const {
   extractLatestMenuFromMessages,
   convertDiscordMenuToWhatsapp,
   markRelayed,
+  discoverCandidateChannelIds,
 } = require('../src/publishers/discordToWhatsappRelay');
 
 function parseArgs(argv) {
@@ -38,6 +38,30 @@ function parseArgs(argv) {
   return opts;
 }
 
+function buildTargets(campusOverride) {
+  const cfg = whatsappPublisher.getConfig();
+  const defaultChannel = whatsappPublisher.normaliseChannelId(process.env.WHATSAPP_CHANNEL_ID);
+
+  if (campusOverride) {
+    const campuses =
+      campusOverride.toLowerCase() === 'all' || campusOverride.toLowerCase() === 'both'
+        ? ['Uzumasa', 'Kameoka']
+        : [campusOverride];
+    return campuses.map((c) => {
+      const normalized = c.toLowerCase() === 'kameoka' ? 'Kameoka' : c.toLowerCase() === 'uzumasa' ? 'Uzumasa' : c;
+      return {
+        campus: normalized,
+        chatId:
+          whatsappPublisher.normaliseChannelId(
+            process.env[`WHATSAPP_CHANNEL_ID_${normalized.toUpperCase()}`]
+          ) || defaultChannel,
+      };
+    });
+  }
+
+  return cfg.targets.length > 0 ? cfg.targets : [{ campus: 'Uzumasa', chatId: null }];
+}
+
 async function run() {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -46,39 +70,16 @@ async function run() {
     process.exit(1);
   }
 
-  const channelIds = (process.env.RELAY_DISCORD_CHANNEL_ID || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (channelIds.length === 0) {
-    console.error('❌ Missing RELAY_DISCORD_CHANNEL_ID in .env');
-    console.error('   Right-click your Discord #lunch channel → Copy Channel ID, and set:');
-    console.error('   RELAY_DISCORD_CHANNEL_ID=your_discord_channel_id');
-    process.exit(1);
-  }
-
   if (!process.env.WAHA_API_URL) {
     process.env.WAHA_API_URL = 'http://localhost:3001';
   }
 
   const cfg = whatsappPublisher.getConfig();
-  const targets = opts.campus
-    ? [
-        {
-          campus: opts.campus,
-          chatId:
-            whatsappPublisher.normaliseChannelId(
-              process.env[`WHATSAPP_CHANNEL_ID_${opts.campus.toUpperCase()}`]
-            ) || whatsappPublisher.normaliseChannelId(process.env.WHATSAPP_CHANNEL_ID),
-        },
-      ]
-    : cfg.targets.length > 0
-      ? cfg.targets
-      : [{ campus: 'Uzumasa', chatId: null }];
+  const targets = buildTargets(opts.campus);
 
   if (!opts.dryRun && targets.some((t) => !t.chatId)) {
-    console.error('❌ Missing WHATSAPP_CHANNEL_ID in .env (or pass --dry-run to preview in terminal).');
+    console.error('❌ Missing WhatsApp Channel ID in .env for one or more campuses (or pass --dry-run to preview).');
+    console.error('   Set WHATSAPP_CHANNEL_ID (shared) or WHATSAPP_CHANNEL_ID_UZUMASA / WHATSAPP_CHANNEL_ID_KAMEOKA.');
     process.exit(1);
   }
 
@@ -95,23 +96,27 @@ async function run() {
 
     try {
       for (const target of targets) {
+        const candidateIds = discoverCandidateChannelIds(client, target.campus);
+        if (candidateIds.length === 0) {
+          console.error(`❌ No Discord channel IDs configured or discovered for ${target.campus}.`);
+          console.error('   Set RELAY_DISCORD_CHANNEL_ID (or RELAY_DISCORD_CHANNEL_ID_KAMEOKA) in .env.');
+          continue;
+        }
+
         let found = null;
         let foundChannelName = null;
 
-        for (const channelId of channelIds) {
-          const channel = await client.channels.fetch(channelId).catch((err) => {
-            console.error(`❌ Could not access Discord channel ${channelId}: ${err.message}`);
-            return null;
-          });
+        for (const channelId of candidateIds) {
+          const channel = await client.channels.fetch(channelId).catch(() => null);
           if (!channel || !channel.messages) continue;
 
-          const fetched = await channel.messages.fetch({ limit: 50 });
+          const fetched = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+          if (!fetched) continue;
           const messages = [...fetched.values()];
 
-          // Hint if Message Content Intent wasn't toggled on in Discord Dev Portal
           if (messages.length > 0 && messages.every((m) => !m.content)) {
             console.error('⚠️ Fetched messages have empty content!');
-            console.error('   Make sure "Message Content Intent" is enabled for your bot in the Discord Developer Portal (Bot → Privileged Gateway Intents).');
+            console.error('   Make sure "Message Content Intent" is enabled for your bot in the Discord Developer Portal.');
           }
 
           found = extractLatestMenuFromMessages(messages, target.campus);
@@ -122,7 +127,7 @@ async function run() {
         }
 
         if (!found) {
-          console.warn(`⚠️ No recent ${target.campus} Campus menu post found in the last 50 messages of channel(s): ${channelIds.join(', ')}`);
+          console.warn(`⚠️ No recent ${target.campus} Campus menu post found in channel(s): ${candidateIds.join(', ')}`);
           continue;
         }
 
@@ -132,13 +137,13 @@ async function run() {
         const whatsappText = convertDiscordMenuToWhatsapp(found.chunks);
 
         if (opts.dryRun) {
-          console.log('\n--- WhatsApp Preview ---\n');
+          console.log(`\n--- WhatsApp Preview (${campus}) ---\n`);
           console.log(whatsappText);
-          console.log('\n------------------------\n');
+          console.log('\n------------------------------------\n');
           continue;
         }
 
-        console.log(`Sending to WhatsApp Channel (${target.chatId}) via WAHA (${cfg.apiUrl})...`);
+        console.log(`Sending ${campus} menu to WhatsApp Channel (${target.chatId}) via WAHA (${cfg.apiUrl})...`);
         await whatsappPublisher.sendText(target.chatId, whatsappText);
         markRelayed(campus, menuDate, found.messageId);
         if (found.messageObj && typeof found.messageObj.react === 'function') {

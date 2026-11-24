@@ -188,9 +188,87 @@ function markRelayed(campus, menuDate, messageId = null, stateFile = DEFAULT_STA
 }
 
 /**
+ * Collect configured Discord source channel IDs from `.env`, supporting:
+ *   - RELAY_DISCORD_CHANNEL_ID (single or comma-separated)
+ *   - RELAY_DISCORD_CHANNEL_ID_UZUMASA
+ *   - RELAY_DISCORD_CHANNEL_ID_KAMEOKA
+ *
+ * @param {string|null} [campus] optional campus filter
+ * @returns {string[]}
+ */
+function resolveRelayChannelIds(campus = null) {
+  const shared = (process.env.RELAY_DISCORD_CHANNEL_ID || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (campus) {
+    const specific = (process.env[`RELAY_DISCORD_CHANNEL_ID_${campus.toUpperCase()}`] || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return [...new Set([...specific, ...shared])];
+  }
+
+  const uzumasa = (process.env.RELAY_DISCORD_CHANNEL_ID_UZUMASA || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const kameoka = (process.env.RELAY_DISCORD_CHANNEL_ID_KAMEOKA || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return [...new Set([...shared, ...uzumasa, ...kameoka])];
+}
+
+/**
+ * Return ordered candidate Discord channel IDs to search for a campus's menu
+ * history: configured channel IDs first, followed by any readable text channels
+ * in the bot's guilds whose names match campus/cafeteria/lunch/menu keywords.
+ *
+ * Allows a single bot in a Discord server with `#cafeteria-uzumasa` and
+ * `#cafeteria-kameoka` to find both campuses automatically!
+ */
+function discoverCandidateChannelIds(client, campus = null) {
+  const configured = resolveRelayChannelIds(campus);
+  const seen = new Set(configured);
+  const discovered = [];
+
+  if (client?.guilds?.cache) {
+    const campusLower = campus ? campus.toLowerCase() : '';
+    const scored = [];
+    for (const guild of client.guilds.cache.values()) {
+      if (!guild?.channels?.cache) continue;
+      for (const ch of guild.channels.cache.values()) {
+        if (!ch?.id || seen.has(ch.id)) continue;
+        // Text-based guild channels (GuildText = 0, GuildAnnouncement = 5)
+        if (typeof ch.isTextBased === 'function' && !ch.isTextBased()) continue;
+        const name = String(ch.name || '').toLowerCase();
+        let score = 0;
+        if (campusLower && name.includes(campusLower)) score += 10;
+        if (/cafeteria|lunch|menu/.test(name)) score += 5;
+        if (score > 0) {
+          scored.push({ id: ch.id, score });
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    for (const item of scored) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        discovered.push(item.id);
+      }
+    }
+  }
+
+  return [...configured, ...discovered];
+}
+
+/**
  * Attach a live `messageCreate` listener to a Discord client that buffers
- * incoming Lunch Bot menu chunks and forwards them to the configured WhatsApp
- * Channel(s) via WAHA.
+ * incoming Lunch Bot menu chunks (for both Uzumasa and Kameoka) and forwards
+ * them to the configured WhatsApp Channel(s) via WAHA.
  *
  * @param {import('discord.js').Client} client
  * @param {{
@@ -203,13 +281,9 @@ function markRelayed(campus, menuDate, messageId = null, stateFile = DEFAULT_STA
  * }} [options]
  */
 function attachRelayListener(client, options = {}) {
-  const watchChannelIds = (
-    options.watchChannelIds ||
-    (process.env.RELAY_DISCORD_CHANNEL_ID || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
+  const explicitWatchIds = options.watchChannelIds || null;
+  const configuredWatchIds = explicitWatchIds || resolveRelayChannelIds();
+  const strictChannelFilter = process.env.RELAY_STRICT_CHANNEL_FILTER === 'true';
   const sourceBotId = options.sourceBotId || (process.env.RELAY_SOURCE_BOT_ID || '').trim() || null;
   const chunkWaitMs = options.chunkWaitMs ?? 2500;
   const stateFile = options.stateFile || DEFAULT_STATE_FILE;
@@ -229,7 +303,7 @@ function attachRelayListener(client, options = {}) {
     const cfg = whatsappPublisher.getConfig();
     const target = cfg.targets.find((t) => t.campus.toLowerCase() === campus.toLowerCase());
     if (!target) {
-      logger.info(`⏭️  [Relay] Detected ${campus} menu in Discord, but ${campus} is not in WHATSAPP_CAMPUSES — ignoring`);
+      logger.info(`⏭️  [Relay] Detected ${campus} menu in Discord, but ${campus} is not enabled in WHATSAPP_CAMPUSES / WHATSAPP_CHANNEL_ID_${campus.toUpperCase()} — ignoring`);
       return;
     }
 
@@ -255,42 +329,16 @@ function attachRelayListener(client, options = {}) {
       // Ignore our own messages if the relay shares a bot user that posts other things
       if (client.user && message.author?.id === client.user.id) return;
 
-      if (watchChannelIds.length > 0 && !watchChannelIds.includes(message.channelId)) {
-        return;
-      }
       if (sourceBotId && message.author?.id !== sourceBotId) {
         return;
       }
 
       const bufferKey = `${message.channelId}:${message.author?.id || 'unknown'}`;
+
+      // If this channel already has an active menu buffer from this author,
+      // accept continuation chunks before applying channel-filter checks.
       const header = parseMenuHeader(message.content);
-
-      if (header) {
-        // If there was a previous unfinished buffer from this author, flush it first
-        if (pendingBuffers.has(bufferKey)) {
-          await flushBuffer(bufferKey);
-        }
-
-        logger.info(`📥 [Relay] Detected ${header.campus} Campus menu (${header.menuDate}) in Discord channel ${message.channelId}`);
-
-        const entry = {
-          header,
-          chunks: [message.content],
-          messageId: message.id || null,
-          firstMessage: message,
-          timer: null,
-        };
-        pendingBuffers.set(bufferKey, entry);
-
-        // Wait briefly in case the menu was split across 2+ Discord messages
-        entry.timer = setTimeout(() => {
-          flushBuffer(bufferKey);
-        }, chunkWaitMs);
-        return;
-      }
-
-      // Check if this message is a continuation chunk for an active menu buffer
-      if (pendingBuffers.has(bufferKey)) {
+      if (!header && pendingBuffers.has(bufferKey)) {
         const entry = pendingBuffers.get(bufferKey);
         entry.chunks.push(message.content);
         if (entry.timer) clearTimeout(entry.timer);
@@ -300,7 +348,48 @@ function attachRelayListener(client, options = {}) {
         entry.timer = setTimeout(() => {
           flushBuffer(bufferKey);
         }, delay);
+        return;
       }
+
+      if (!header) return;
+
+      // Channel gating:
+      // 1. If caller explicitly passed `options.watchChannelIds`, enforce it strictly.
+      // 2. Otherwise, allow any channel in `configuredWatchIds`, OR (unless
+      //    RELAY_STRICT_CHANNEL_FILTER=true) any bot-authored menu post in the
+      //    server (e.g. `#cafeteria-kameoka` when only `#cafeteria-uzumasa` was
+      //    listed in RELAY_DISCORD_CHANNEL_ID).
+      if (explicitWatchIds) {
+        if (explicitWatchIds.length > 0 && !explicitWatchIds.includes(message.channelId)) {
+          return;
+        }
+      } else if (configuredWatchIds.length > 0 && !configuredWatchIds.includes(message.channelId)) {
+        const isUpstreamBotPost = Boolean(message.author?.bot);
+        if (strictChannelFilter || !isUpstreamBotPost) {
+          return;
+        }
+      }
+
+      // If there was a previous unfinished buffer from this author, flush it first
+      if (pendingBuffers.has(bufferKey)) {
+        await flushBuffer(bufferKey);
+      }
+
+      logger.info(`📥 [Relay] Detected ${header.campus} Campus menu (${header.menuDate}) in Discord channel ${message.channelId}`);
+
+      const entry = {
+        header,
+        chunks: [message.content],
+        messageId: message.id || null,
+        firstMessage: message,
+        timer: null,
+      };
+      pendingBuffers.set(bufferKey, entry);
+
+      // Wait briefly in case the menu was split across 2+ Discord messages
+      entry.timer = setTimeout(() => {
+        flushBuffer(bufferKey);
+      }, chunkWaitMs);
     } catch (err) {
       logger.error(`❌ [Relay] Error handling Discord message: ${err.message}`);
     }
@@ -336,6 +425,8 @@ module.exports = {
   extractLatestMenuFromMessages,
   wasAlreadyRelayed,
   markRelayed,
+  resolveRelayChannelIds,
+  discoverCandidateChannelIds,
   attachRelayListener,
   isWhatsappOfflineAlertSlot,
 };

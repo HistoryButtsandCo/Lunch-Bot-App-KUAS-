@@ -120,17 +120,29 @@ async function cmdChannels(apiUrl, inviteArg) {
     const r = String(c.role || c.viewerMetadata?.role || '').toUpperCase();
     return r === 'OWNER' || r === 'ADMIN' || !r;
   });
-  const picked = writable[0] || channels[0];
 
-  console.log('Add these lines to your .env file to start with Uzumasa Campus:');
-  console.log('---------------------------------------------------------------');
+  const uzumasaMatch = writable.find((c) => /uzumasa/i.test(c.name || '')) || writable[0] || channels[0];
+  const kameokaMatch = writable.find((c) => /kameoka/i.test(c.name || '')) || writable[1] || null;
+
+  console.log('Add these lines to your .env file (one bot handles BOTH Uzumasa & Kameoka):');
+  console.log('---------------------------------------------------------------------------');
   console.log(`WAHA_API_URL=${apiUrl}`);
   if (process.env.WAHA_API_KEY) {
     console.log(`WAHA_API_KEY=${process.env.WAHA_API_KEY}`);
   }
-  console.log(`WHATSAPP_CHANNEL_ID=${picked.id}`);
-  console.log('WHATSAPP_CAMPUSES=Uzumasa');
-  console.log('---------------------------------------------------------------');
+  console.log('WHATSAPP_CAMPUSES=Uzumasa,Kameoka');
+  if (kameokaMatch && kameokaMatch.id !== uzumasaMatch.id) {
+    console.log('# Separate WhatsApp Channels per campus:');
+    console.log(`WHATSAPP_CHANNEL_ID_UZUMASA=${uzumasaMatch.id}`);
+    console.log(`WHATSAPP_CHANNEL_ID_KAMEOKA=${kameokaMatch.id}`);
+  } else {
+    console.log('# Option A — Post both campuses to one WhatsApp Channel:');
+    console.log(`WHATSAPP_CHANNEL_ID=${uzumasaMatch.id}`);
+    console.log('# Option B — Or use separate WhatsApp Channels per campus:');
+    console.log(`# WHATSAPP_CHANNEL_ID_UZUMASA=${uzumasaMatch.id}`);
+    console.log('# WHATSAPP_CHANNEL_ID_KAMEOKA=120363XXXXXXXXXXXX@newsletter');
+  }
+  console.log('---------------------------------------------------------------------------');
 }
 
 async function main() {

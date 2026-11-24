@@ -12,6 +12,7 @@ const {
   parseMenuHeader,
   convertDiscordMenuToWhatsapp,
   extractLatestMenuFromMessages,
+  discoverCandidateChannelIds,
   attachRelayListener,
   isWhatsappOfflineAlertSlot,
 } = require('../src/publishers/discordToWhatsappRelay');
@@ -177,4 +178,93 @@ test('isWhatsappOfflineAlertSlot matches 6:00, 6:30, 7:00, 8:00, 9:00, and every
   assert.strictEqual(isWhatsappOfflineAlertSlot(9, 15), false);
   assert.strictEqual(isWhatsappOfflineAlertSlot(10, 0), true);
   assert.strictEqual(isWhatsappOfflineAlertSlot(10, 20), true);
+});
+
+test('a single relay bot routes Uzumasa and Kameoka menus to their respective WhatsApp Channels', async () => {
+  process.env.WAHA_API_URL = 'http://localhost:3001';
+  process.env.WHATSAPP_CHANNEL_ID_UZUMASA = '120363111111111111@newsletter';
+  process.env.WHATSAPP_CHANNEL_ID_KAMEOKA = '120363222222222222@newsletter';
+  process.env.RELAY_DISCORD_CHANNEL_ID = 'uzumasa-discord-chan';
+
+  const tmpStateFile = path.join(os.tmpdir(), `relay-dual-${Date.now()}.json`);
+  const sentToWaha = [];
+  mock.method(whatsappPublisher, 'sendText', async (chatId, text) => {
+    sentToWaha.push({ chatId, text });
+    return { id: 'msg' };
+  });
+
+  try {
+    const client = new EventEmitter();
+    client.user = { id: 'relay-bot-id' };
+
+    attachRelayListener(client, {
+      chunkWaitMs: 30,
+      stateFile: tmpStateFile,
+    });
+
+    // Uzumasa post in configured channel
+    client.emit('messageCreate', {
+      id: '201',
+      channelId: 'uzumasa-discord-chan',
+      author: { id: 'upstream-bot', bot: true },
+      content: '# Uzumasa Campus — Thursday, 2026-08-20\n\n## 🍱 Set Meals  ·  ¥260\n> 🥘 **Chicken Nanban**\n\n━━━━━━━━━━━━━━━━━━━━━━\n🎫 Tickets from **10:00 AM**',
+    });
+
+    // Kameoka post in #cafeteria-kameoka (auto-allowed because author.bot === true!)
+    client.emit('messageCreate', {
+      id: '202',
+      channelId: 'kameoka-discord-chan',
+      author: { id: 'upstream-bot', bot: true },
+      content: '# Kameoka Campus — Thursday, 2026-08-20\n\n## 🍱 Set Meals  ·  ¥500\n**— Set A —**\n> 🍱 **Pork Loin Tonkatsu**\n\n━━━━━━━━━━━━━━━━━━━━━━\n🎫 Tickets from **10:00 AM**',
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    assert.strictEqual(sentToWaha.length, 2);
+    const uzu = sentToWaha.find((s) => s.chatId === '120363111111111111@newsletter');
+    const kam = sentToWaha.find((s) => s.chatId === '120363222222222222@newsletter');
+    assert.ok(uzu, 'Uzumasa routed to Uzumasa WhatsApp Channel');
+    assert.ok(kam, 'Kameoka routed to Kameoka WhatsApp Channel');
+    assert.match(uzu.text, /🍽️ \*Uzumasa Campus — Thursday, 2026-08-20\*/);
+    assert.match(kam.text, /🍽️ \*Kameoka Campus — Thursday, 2026-08-20\*/);
+    assert.match(kam.text, /\*Pork Loin Tonkatsu\*/);
+  } finally {
+    delete process.env.WAHA_API_URL;
+    delete process.env.WHATSAPP_CHANNEL_ID_UZUMASA;
+    delete process.env.WHATSAPP_CHANNEL_ID_KAMEOKA;
+    delete process.env.RELAY_DISCORD_CHANNEL_ID;
+    mock.restoreAll();
+    if (fs.existsSync(tmpStateFile)) fs.unlinkSync(tmpStateFile);
+  }
+});
+
+test('discoverCandidateChannelIds finds #cafeteria-kameoka in the Discord server automatically', () => {
+  process.env.RELAY_DISCORD_CHANNEL_ID = '1504156157600600197';
+  try {
+    const mockClient = {
+      guilds: {
+        cache: new Map([
+          [
+            'g1',
+            {
+              channels: {
+                cache: new Map([
+                  ['1504156157600600197', { id: '1504156157600600197', name: 'cafeteria-uzumasa', isTextBased: () => true }],
+                  ['999888777666555444', { id: '999888777666555444', name: 'cafeteria-kameoka', isTextBased: () => true }],
+                  ['111222333444555666', { id: '111222333444555666', name: 'general-chat', isTextBased: () => true }],
+                ]),
+              },
+            },
+          ],
+        ]),
+      },
+    };
+
+    const candidates = discoverCandidateChannelIds(mockClient, 'Kameoka');
+    assert.ok(candidates.includes('1504156157600600197'));
+    assert.ok(candidates.includes('999888777666555444'), 'auto-discovers #cafeteria-kameoka');
+    assert.ok(!candidates.includes('111222333444555666'), 'ignores #general-chat');
+  } finally {
+    delete process.env.RELAY_DISCORD_CHANNEL_ID;
+  }
 });
