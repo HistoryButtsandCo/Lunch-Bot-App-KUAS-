@@ -17,29 +17,39 @@ const { MIN_ITEMS_PER_DAY } = require('../utils/dataQuality');
 let scheduledJob = null;
 
 /**
- * Publish today's menus to every active subscriber.
+ * Publish menus to active subscribers (today by default, or a targeted date /
+ * campus / guild / channel when triggered manually).
  *
  * @param {import('discord.js').Client} client
- * @param {{manual?: boolean, campus?: string, channelId?: string}} [options] `manual` marks a run a human started
- *   (publishNow, the dashboard button). Such a run suppresses the health push
- *   and the admin DMs: "menu present, 0 sent" is the *expected* outcome of
- *   re-running once everyone already has today's menu, and it is
- *   indistinguishable from the August failure from in here. Alerting on it
+ * @param {{
+ *   manual?: boolean,
+ *   campus?: string,
+ *   channelId?: string,
+ *   guildId?: string,
+ *   date?: string,
+ *   force?: boolean
+ * }} [options]
+ *   `manual` marks a run a human started (publishNow, the dashboard). Such a run
+ *   suppresses the health push and the admin DMs: "menu present, 0 sent" is the
+ *   *expected* outcome of re-running once everyone already has today's menu, and
+ *   it is indistinguishable from the August failure from in here. Alerting on it
  *   would page someone every time the retry button did its job. The scheduled
  *   run — the one nobody is watching — keeps the signal.
- *   `campus` and `channelId` narrow the run to those subscriptions only, for
- *   re-posting one channel (or one campus) without touching the rest. The
- *   delivery log still records the target, so the scheduled run will not repeat
- *   it later that day.
+ *   `campus`, `guildId` and `channelId` narrow the run to those subscriptions
+ *   only, for re-posting one channel (or one campus) without touching the rest.
+ *   `date` selects an explicit YYYY-MM-DD menu date, and `force` bypasses the
+ *   duplicate-delivery guard when an operator deliberately re-sends a menu.
  */
 async function publishMenu(client, options = {}) {
   const manual = options.manual === true;
+  const force = options.force === true;
   const now = new Date();
   logger.info(`🔄 Menu publisher job started at ${now.toISOString()}${manual ? ' (manual run)' : ''}`);
 
-  try {
-    const today = todayCampus(); // YYYY-MM-DD in JST, not UTC
+  const today = todayCampus(); // YYYY-MM-DD in JST, not UTC
+  const targetDate = options.date ? String(options.date) : today;
 
+  try {
     // Repair before reading anything. A mislabelled Kameoka menu is invisible to
     // every query below — that is how two October Mondays went out to Uzumasa
     // alone while the workflow that caused it kept reporting success, and why the
@@ -51,7 +61,7 @@ async function publishMenu(client, options = {}) {
     let repairNote = null;
     let refusedNote = null;
     try {
-      const { from: repairFrom, to: repairTo } = db.repairWindow();
+      const { from: repairFrom, to: repairTo } = db.repairWindow(targetDate);
       const repair = await db.repairUnknownCampus(repairFrom, repairTo);
       if (repair.relabelled > 0 || repair.deleted > 0) {
         repairNote =
@@ -83,32 +93,35 @@ async function publishMenu(client, options = {}) {
     let subscriptions = await db.getActiveSubscriptions();
     logger.info(`📤 Found ${subscriptions.length} active subscription(s)`);
 
-    // A narrowed run re-posts one campus or one channel and leaves every other
-    // subscriber alone. It is still a normal publish for the target: same menu,
-    // same role ping, same delivery row, so the scheduled run skips it later.
-    if (options.campus || options.channelId) {
+    // A narrowed run re-posts one campus, guild, or channel and leaves every
+    // other subscriber alone. It is still a normal publish for the target: same
+    // menu, same role ping, same delivery row, so the scheduled run skips it later.
+    if (options.campus || options.channelId || options.guildId) {
       const campusFilter = options.campus ? String(options.campus) : null;
       const channelFilter = options.channelId ? String(options.channelId) : null;
+      const guildFilter = options.guildId ? String(options.guildId) : null;
       const total = subscriptions.length;
       subscriptions = subscriptions.filter(
         (sub) =>
           (!campusFilter || sub.campus === campusFilter) &&
-          (!channelFilter || String(sub.channel_id) === channelFilter)
+          (!channelFilter || String(sub.channel_id) === channelFilter) &&
+          (!guildFilter || String(sub.guild_id) === guildFilter)
       );
       logger.info(
         `🎯 Narrowed to ${subscriptions.length} of ${total} subscription(s)` +
           (campusFilter ? ` · campus=${campusFilter}` : '') +
+          (guildFilter ? ` · guild=${guildFilter}` : '') +
           (channelFilter ? ` · channel=${channelFilter}` : '')
       );
       if (subscriptions.length === 0) {
-        logger.warn('🎯 Nothing matched that campus/channel — nothing published');
-        return;
+        logger.warn('🎯 Nothing matched that target filter — nothing published');
+        return { date: targetDate, sent: 0, skipped: 0, failed: 0, anyMenuAvailable: false };
       }
     }
 
     if (subscriptions.length === 0) {
       logger.info('ℹ️ No active subscriptions, skipping delivery');
-      return;
+      return { date: targetDate, sent: 0, skipped: 0, failed: 0, anyMenuAvailable: false };
     }
 
     // Group subscriptions by campus
@@ -126,13 +139,17 @@ async function publishMenu(client, options = {}) {
     let anyMenuAvailable = false;
 
     for (const [campus, subs] of Object.entries(byCampus)) {
-      logger.info(`🍽️ Processing ${campus} Campus — ${subs.length} subscriber(s)`);
+      logger.info(`🍽️ Processing ${campus} Campus (${targetDate}) — ${subs.length} subscriber(s)`);
 
-      // Fetch this campus's menu ONCE
-      const menuItems = await db.getTodayMenu(campus);
+      // Fetch this campus's menu ONCE (use getTodayMenu for today so existing
+      // callers/mocks behave identically, and getMenuByDate for custom dates).
+      const menuItems =
+        targetDate === today
+          ? await db.getTodayMenu(campus)
+          : await db.getMenuByDate(targetDate, campus);
 
       if (!menuItems || menuItems.length === 0) {
-        logger.warn(`⚠️ No menu items found for ${campus} Campus today — skipping`);
+        logger.warn(`⚠️ No menu items found for ${campus} Campus (${targetDate}) — skipping`);
         // Record the skip so a silent no-post day is visible in the delivery
         // log rather than looking identical to the publisher never running.
         for (const subscription of subs) {
@@ -141,7 +158,7 @@ async function publishMenu(client, options = {}) {
               subscription.guild_id,
               subscription.channel_id,
               campus,
-              today,
+              targetDate,
               'skipped',
               'No menu published for this date'
             )
@@ -157,7 +174,7 @@ async function publishMenu(client, options = {}) {
       // the same way as an empty day, with the count in the log.
       if (menuItems.length < MIN_ITEMS_PER_DAY) {
         logger.warn(
-          `⚠️ Only ${menuItems.length} item(s) for ${campus} Campus today (expected at least ${MIN_ITEMS_PER_DAY}) — treating as an incomplete scrape and skipping`
+          `⚠️ Only ${menuItems.length} item(s) for ${campus} Campus (${targetDate}, expected at least ${MIN_ITEMS_PER_DAY}) — treating as an incomplete scrape and skipping`
         );
         for (const subscription of subs) {
           await db
@@ -165,7 +182,7 @@ async function publishMenu(client, options = {}) {
               subscription.guild_id,
               subscription.channel_id,
               campus,
-              today,
+              targetDate,
               'skipped',
               `Only ${menuItems.length} item(s) for this date — suspected incomplete scrape`
             )
@@ -177,7 +194,7 @@ async function publishMenu(client, options = {}) {
 
       anyMenuAvailable = true;
 
-      logger.info(`📋 Found ${menuItems.length} menu items for ${campus} Campus`);
+      logger.info(`📋 Found ${menuItems.length} menu items for ${campus} Campus (${targetDate})`);
 
       // Fetch aggregate ratings
       const dishNames = [...new Set(menuItems.map((d) => d.dish_name))];
@@ -189,14 +206,17 @@ async function publishMenu(client, options = {}) {
       // Format menu with campus-specific config. Recent weeks have arrived with
       // every price NULL, so the last published prices stand in where the
       // scraper dropped them — see db.getLastKnownPrices.
-      const fallbackPrices = await db.getLastKnownPrices(campus);
+      const fallbackPrices =
+        targetDate === today
+          ? await db.getLastKnownPrices(campus)
+          : await db.getLastKnownPrices(campus, targetDate);
       const messageChunks = formatMenuMessage(menuItems, ratingsMap, campus, fallbackPrices);
       logger.info(`📝 Formatted ${campus} Campus menu into ${messageChunks.length} chunk(s)`);
 
       // Campus-specific rate button
       const rateButton = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`rate_menu_open:${campus}:${today}`)
+          .setCustomId(`rate_menu_open:${campus}:${targetDate}`)
           .setLabel('⭐ Rate today\'s dishes')
           .setStyle(ButtonStyle.Secondary)
       );
@@ -206,17 +226,19 @@ async function publishMenu(client, options = {}) {
         try {
           const { guild_id: guildId, channel_id: channelId, guild_name: guildName } = subscription;
 
-          const alreadySent = await db.hasSuccessfulDelivery(guildId, campus, today);
-          if (alreadySent) {
-            logger.info(`⏭️  Skipped ${guildName} (${campus}): already sent today`);
-            skipCount++;
-            continue;
+          if (!force) {
+            const alreadySent = await db.hasSuccessfulDelivery(guildId, campus, targetDate);
+            if (alreadySent) {
+              logger.info(`⏭️  Skipped ${guildName} (${campus}): already sent for ${targetDate}`);
+              skipCount++;
+              continue;
+            }
           }
 
           const channel = await client.channels.fetch(channelId).catch(() => null);
           if (!channel) {
             logger.warn(`❌ Channel not found for ${guildName} (${channelId})`);
-            await db.logDelivery(guildId, channelId, campus, today, 'failed', 'Channel not found');
+            await db.logDelivery(guildId, channelId, campus, targetDate, 'failed', 'Channel not found');
             failCount++;
             continue;
           }
@@ -224,7 +246,7 @@ async function publishMenu(client, options = {}) {
           const me = channel.guild.members.me;
           if (!me || !channel.permissionsFor(me).has('SendMessages')) {
             logger.warn(`❌ No permission to send in ${guildName}/#${channel.name}`);
-            await db.logDelivery(guildId, channelId, campus, today, 'failed', 'Missing SendMessages permission');
+            await db.logDelivery(guildId, channelId, campus, targetDate, 'failed', 'Missing SendMessages permission');
             failCount++;
             continue;
           }
@@ -248,13 +270,13 @@ async function publishMenu(client, options = {}) {
             });
           }
 
-          await db.logDelivery(guildId, channelId, campus, today, 'success', null);
-          logger.info(`✅ Sent ${campus} Campus menu to ${guildName}/#${channel.name}`);
+          await db.logDelivery(guildId, channelId, campus, targetDate, 'success', null);
+          logger.info(`✅ Sent ${campus} Campus menu (${targetDate}) to ${guildName}/#${channel.name}`);
           successCount++;
         } catch (error) {
           logger.error(`❌ Error sending ${campus} menu to guild ${subscription.guild_name}: ${error.message}`);
           await db
-            .logDelivery(subscription.guild_id, subscription.channel_id, campus, today, 'failed', error.message)
+            .logDelivery(subscription.guild_id, subscription.channel_id, campus, targetDate, 'failed', error.message)
             .catch((err) => logger.error(`Failed to log delivery error: ${err.message}`));
           failCount++;
         }
@@ -299,7 +321,7 @@ async function publishMenu(client, options = {}) {
 
     if ((failCount > 0 || totalFailure) && process.env.BOT_ADMIN_ID && !manual) {
       const content = totalFailure
-        ? `🚨 **Menu Publisher — nothing delivered**\nA menu was published for ${today} but **no guild received it** (${skipCount} skipped, ${failCount} failed).\nCheck the delivery log and the publisher's date handling.`
+        ? `🚨 **Menu Publisher — nothing delivered**\nA menu was published for ${targetDate} but **no guild received it** (${skipCount} skipped, ${failCount} failed).\nCheck the delivery log and the publisher's date handling.`
         : `⚠️ **Menu Publisher Alert**\n${failCount} guild(s) failed to receive today's menu.\nCheck bot permissions and channel availability.`;
 
       try {
@@ -328,6 +350,14 @@ async function publishMenu(client, options = {}) {
         }
       }
     }
+
+    return {
+      date: targetDate,
+      sent: successCount,
+      skipped: skipCount,
+      failed: failCount,
+      anyMenuAvailable,
+    };
   } catch (error) {
     logger.error(`❌ Publisher job error: ${error.message}`);
 
@@ -341,6 +371,15 @@ async function publishMenu(client, options = {}) {
         logger.error(`Could not send critical error alert: ${alertErr.message}`);
       }
     }
+
+    return {
+      date: targetDate,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      anyMenuAvailable: false,
+      error: error.message,
+    };
   }
 }
 
@@ -378,6 +417,15 @@ async function catchUpIfMissed(client) {
   }
 }
 
+function getSchedulerInfo() {
+  const next = scheduledJob?.nextInvocation?.();
+  return {
+    running: Boolean(scheduledJob),
+    postingTime: POSTING_TIME,
+    nextInvocation: next ? new Date(next).toISOString() : null,
+  };
+}
+
 function start(client) {
   if (scheduledJob) {
     logger.warn('Menu publisher already running, skipping restart');
@@ -402,4 +450,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, publishMenu, catchUpIfMissed };
+module.exports = { start, stop, publishMenu, catchUpIfMissed, getSchedulerInfo };

@@ -141,6 +141,7 @@ function buildOverview({ dates, today, subscriptions = [], menuCounts = [], deli
         .filter((sub) => !logged.has(String(sub.guild_id)))
         .map((sub) => ({
           guild_id: String(sub.guild_id),
+          channel_id: sub.channel_id ? String(sub.channel_id) : null,
           guild_name: sub.guild_name,
           channel_name: sub.channel_name,
           campus,
@@ -195,6 +196,7 @@ function buildOverview({ dates, today, subscriptions = [], menuCounts = [], deli
 function normaliseDelivery(row) {
   return {
     guildId: String(row.guild_id),
+    channelId: row.channel_id ? String(row.channel_id) : null,
     guildName: row.guild_name || `Unknown guild (${row.guild_id})`,
     channelName: row.channel_name || null,
     campus: row.campus,

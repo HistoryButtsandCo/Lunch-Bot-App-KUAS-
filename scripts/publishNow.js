@@ -9,14 +9,17 @@ const menuPublisher = require('../src/publishers/menuPublisher');
 
 const args = process.argv.slice(2);
 /**
- * --campus <Uzumasa|Kameoka> and --channel <CHANNEL_ID> narrow the run, e.g.
- *   node scripts/publishNow.js --campus Uzumasa --channel 1504156157600600197
+ * --campus <Uzumasa|Kameoka>, --channel <CHANNEL_ID>, --date <YYYY-MM-DD>,
+ * and --force narrow or force the run, e.g.
+ *   node scripts/publishNow.js --campus Uzumasa --channel 1504156157600600197 --force
  * Without them this still publishes to every active subscription.
  */
 const options = { manual: true };
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--campus' || args[i] === '-k') options.campus = args[++i];
   else if (args[i] === '--channel' || args[i] === '-c') options.channelId = args[++i];
+  else if (args[i] === '--date' || args[i] === '-d') options.date = args[++i];
+  else if (args[i] === '--force' || args[i] === '-f') options.force = true;
 }
 
 async function run() {
@@ -26,8 +29,15 @@ async function run() {
   console.log('DB Name:', process.env.POSTGRES_DB || '(not set)');
   console.log('DB User:', process.env.POSTGRES_USER || '(not set)');
   console.log('DB Port:', process.env.POSTGRES_PORT || '(not set)');
-  if (options.campus || options.channelId) {
-    console.log('Target:', options.campus || 'any campus', '/', options.channelId || 'all channels');
+  if (options.campus || options.channelId || options.date || options.force) {
+    console.log(
+      'Target:',
+      options.campus || 'any campus',
+      '/',
+      options.channelId || 'all channels',
+      options.date ? `/ date=${options.date}` : '',
+      options.force ? '(force re-send)' : ''
+    );
   }
 
   try {

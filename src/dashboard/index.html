@@ -3,57 +3,83 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Operational control center for What's for Lunch Discord Bot — monitor server connections, inspect scraped cafeteria menus, and manually dispatch campus menus.">
 <meta name="robots" content="noindex, nofollow">
-<title>What's for Lunch — Admin</title>
+<title>What's for Lunch — Control Center</title>
 <style>
-/* Laid out for a landscape screen: the page is a fixed-height shell and the two
-   panes scroll independently, so the header and the stat strip stay put and no
-   vertical space is spent on chrome that scrolls away. Below 1000px — a phone,
-   or a window in portrait — it falls back to one column and normal page flow.
-
-   Status colours are the reserved status palette and are always paired with an
-   icon and a text label, so state is never carried by hue alone. */
 :root {
   color-scheme: light;
-  --surface-1: #fcfcfb;
-  --plane: #f9f9f7;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --hairline: #e1e0d9;
-  --border: rgba(11, 11, 11, 0.10);
-  --good: #0ca30c;
-  --warning: #fab219;
-  --serious: #ec835a;
-  --critical: #d03b3b;
-  --accent: #2a78d6;
-  --wash: rgba(11, 11, 11, 0.04);
+  --plane: #f5f5f2;
+  --surface-1: #ffffff;
+  --surface-2: #fafaf8;
+  --surface-raised: #ffffff;
+  --text-primary: #111110;
+  --text-secondary: #4d4c48;
+  --text-muted: #7c7a73;
+  --hairline: #e6e5df;
+  --border: rgba(17, 17, 16, 0.11);
+  --border-strong: rgba(17, 17, 16, 0.20);
+  --good: #0d9448;
+  --good-bg: rgba(13, 148, 72, 0.09);
+  --warning: #c87d0a;
+  --warning-bg: rgba(200, 125, 10, 0.10);
+  --serious: #d95f2b;
+  --critical: #cf2f2f;
+  --critical-bg: rgba(207, 47, 47, 0.09);
+  --accent: #1d6fd6;
+  --accent-bg: rgba(29, 111, 214, 0.09);
+  --wash: rgba(17, 17, 16, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --plane: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --hairline: #2c2c2a;
+    --plane: #0d0e0d;
+    --surface-1: #161716;
+    --surface-2: #1d1e1c;
+    --surface-raised: #212220;
+    --text-primary: #f3f3f0;
+    --text-secondary: #b9b8b0;
+    --text-muted: #84837c;
+    --hairline: #282927;
     --border: rgba(255, 255, 255, 0.10);
-    --accent: #3987e5;
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --good: #2ec26a;
+    --good-bg: rgba(46, 194, 106, 0.12);
+    --warning: #f0a82e;
+    --warning-bg: rgba(240, 168, 46, 0.12);
+    --serious: #ef7c4d;
+    --critical: #ee5555;
+    --critical-bg: rgba(238, 85, 85, 0.13);
+    --accent: #4493f8;
+    --accent-bg: rgba(68, 147, 248, 0.14);
     --wash: rgba(255, 255, 255, 0.05);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.30);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-1: #1a1a19;
-  --plane: #0d0d0d;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-  --hairline: #2c2c2a;
+  --plane: #0d0e0d;
+  --surface-1: #161716;
+  --surface-2: #1d1e1c;
+  --surface-raised: #212220;
+  --text-primary: #f3f3f0;
+  --text-secondary: #b9b8b0;
+  --text-muted: #84837c;
+  --hairline: #282927;
   --border: rgba(255, 255, 255, 0.10);
-  --accent: #3987e5;
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --good: #2ec26a;
+  --good-bg: rgba(46, 194, 106, 0.12);
+  --warning: #f0a82e;
+  --warning-bg: rgba(240, 168, 46, 0.12);
+  --serious: #ef7c4d;
+  --critical: #ee5555;
+  --critical-bg: rgba(238, 85, 85, 0.13);
+  --accent: #4493f8;
+  --accent-bg: rgba(68, 147, 248, 0.14);
   --wash: rgba(255, 255, 255, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.30);
 }
 
 * { box-sizing: border-box; }
@@ -62,163 +88,576 @@ body {
   margin: 0;
   background: var(--plane);
   color: var(--text-primary);
-  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.app { display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 20px; }
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 20px 18px;
+  max-width: 1680px;
+  margin: 0 auto;
+}
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: none; }
-h1 { font-size: 16px; font-weight: 620; margin: 0; letter-spacing: -0.01em; white-space: nowrap; }
-.sub { color: var(--text-muted); font-size: 12.5px; }
+/* ── Header & Controls ──────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: none;
+}
+h1 {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+}
+.sub { color: var(--text-muted); font-size: 12px; }
 #subtitle { font-variant-numeric: tabular-nums; }
 .spacer { flex: 1 1 auto; }
 
-button, select, input {
-  font: inherit; font-size: 13px;
+button, select, input[type="text"], input[type="date"], input[type="search"], input[type="password"] {
+  font: inherit;
+  font-size: 12.5px;
   color: var(--text-primary);
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 7px;
-  padding: 4px 9px;
+  padding: 5px 10px;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+}
+button, select { cursor: pointer; }
+button:hover:not(:disabled), select:hover:not(:disabled) {
+  background: var(--wash);
+  border-color: var(--border-strong);
+}
+button:active:not(:disabled) { transform: translateY(0.5px); }
+button:disabled, select:disabled, input:disabled { opacity: 0.48; cursor: not-allowed; }
+button.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 580;
+}
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--accent);
+}
+button.sm {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+button.ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+input[type="text"], input[type="date"], input[type="search"], input[type="password"] {
+  cursor: text;
+}
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+label.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
   cursor: pointer;
 }
-button:hover:not(:disabled), select:hover { background: var(--wash); }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
-button.primary { background: var(--accent); border-color: transparent; color: #fff; font-weight: 550; }
-button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
-input { cursor: text; }
-label.field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
 
-/* ── Stat strip ─────────────────────────────────────────────────────────── */
-/* One row of hairline-divided cells rather than floating cards — same numbers,
-   about a third of the height. Values use proportional figures; tabular figures
-   are for columns that align, not for standalone numbers. */
-.stats {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: 1px; background: var(--border);
-  border: 1px solid var(--border); border-radius: 10px; overflow: hidden; flex: none;
+/* ── Connection Topology & Stat Strip ───────────────────────────────────── */
+.topology {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  flex: none;
 }
-.stat { background: var(--surface-1); padding: 13px 17px 14px; min-width: 0; }
-.stat .k { font-size: 12px; color: var(--text-muted); line-height: 1.3; }
-.stat .v { font-size: 22px; font-weight: 640; margin-top: 5px; line-height: 1.2; letter-spacing: -0.015em; }
-.stat .v small { font-size: 14px; font-weight: 500; color: var(--text-muted); }
-.stat .n { font-size: 12px; color: var(--text-secondary); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node {
+  background: var(--surface-1);
+  padding: 11px 15px 12px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.node-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.node-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.node-val {
+  font-size: 15px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.node-val small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.node-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
 
-/* ── Panes ──────────────────────────────────────────────────────────────── */
-.panes { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+/* ── Navigation Tabs ────────────────────────────────────────────────────── */
+.navstrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 8px;
+  flex: none;
+}
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--surface-2);
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+}
+.tab {
+  border: 0;
+  background: transparent;
+  padding: 6px 13px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 560;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab:hover:not(.active) { background: var(--wash); color: var(--text-primary); }
+.tab.active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+.tab-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.tab-badge.alert { background: var(--critical-bg); color: var(--critical); font-weight: 650; }
+
+.kpis {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+}
+.kpis strong { color: var(--text-primary); font-weight: 640; }
+
+/* ── Workspace Views & Panels ───────────────────────────────────────────── */
+.view { display: none; min-height: 0; flex: 1 1 auto; }
+.view.active { display: flex; flex-direction: column; gap: 12px; }
+
+.panes { display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1 1 auto; }
 .panel {
-  display: flex; flex-direction: column; min-height: 0;
-  background: var(--surface-1); border: 1px solid var(--border);
-  border-radius: 10px; overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
-.panel h2 {
-  font-size: 12.5px; font-weight: 620; margin: 0; padding: 13px 18px; flex: none;
-  border-bottom: 1px solid var(--hairline); letter-spacing: -0.005em;
-  display: flex; align-items: baseline; gap: 9px;
+.panel-head {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: none;
+  background: var(--surface-2);
 }
-.panel h2 .hint { font-weight: 400; color: var(--text-muted); font-size: 12px; }
+.panel-head h2 {
+  font-size: 13px;
+  font-weight: 630;
+  margin: 0;
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.panel-head .hint { font-weight: 400; color: var(--text-muted); font-size: 12px; }
 .pbody { overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
+.pbody.pad { padding: 16px 18px; }
 #days { container-type: inline-size; }
 
-@media (min-width: 1000px) {
+@media (min-width: 1040px) {
   body { overflow: hidden; }
   .app { height: 100dvh; }
-  .panes {
-    flex: 1 1 auto;
-    display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  .panes.split-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  .panes.split-equal {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  .panes.split-dispatch {
+    display: grid;
+    grid-template-columns: minmax(340px, 0.92fr) minmax(0, 1.35fr);
     grid-auto-rows: minmax(0, 1fr);
   }
 }
 
-/* ── Status chips ───────────────────────────────────────────────────────── */
+/* ── Status Chips ───────────────────────────────────────────────────────── */
 .chip {
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  font-size: 12.5px; font-weight: 560; padding: 3px 10px 3px 8px;
-  border-radius: 999px; border: 1px solid var(--border); background: var(--wash);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 580;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--wash);
 }
-.chip .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.s-delivered .dot { background: var(--good); }
-.s-partial .dot { background: var(--warning); }
-.s-failed .dot, .s-missing .dot { background: var(--critical); }
-.s-pending .dot { background: var(--serious); }
+.chip .dot { width: 6.5px; height: 6.5px; border-radius: 50%; flex: none; }
+.s-delivered .dot, .s-success .dot, .s-ready .dot { background: var(--good); }
+.s-delivered, .s-success, .s-ready { color: var(--good); background: var(--good-bg); border-color: transparent; }
+.s-partial .dot, .s-pending .dot { background: var(--warning); }
+.s-partial, .s-pending { color: var(--warning); background: var(--warning-bg); border-color: transparent; }
+.s-failed .dot, .s-missing .dot, .s-missing-guild .dot, .s-missing-channel .dot, .s-missing-permission .dot, .s-offline .dot { background: var(--critical); }
+.s-failed, .s-missing, .s-missing-guild, .s-missing-channel, .s-missing-permission, .s-offline {
+  color: var(--critical);
+  background: var(--critical-bg);
+  border-color: transparent;
+}
 .s-no-menu .dot, .s-weekend .dot, .s-no-subscribers .dot, .s-skipped .dot { background: var(--text-muted); }
-.s-delivered { color: var(--good); }
-.s-partial, .s-pending { color: var(--text-primary); }
-.s-failed, .s-missing { color: var(--critical); }
 .s-no-menu, .s-weekend, .s-no-subscribers, .s-skipped { color: var(--text-muted); }
 
-/* ── Day list ───────────────────────────────────────────────────────────── */
+/* ── Day Timeline ───────────────────────────────────────────────────────── */
 .day { border-bottom: 1px solid var(--hairline); }
 .day:last-child { border-bottom: 0; }
 .day.weekend { background: var(--wash); }
 .day.today .date strong { color: var(--accent); }
 
 .dayhead {
-  display: grid; grid-template-columns: 118px 132px minmax(0, 1fr) auto 12px;
-  gap: 18px; align-items: center; padding: 13px 18px; width: 100%;
-  background: none; border: 0; border-radius: 0; text-align: left; cursor: pointer;
+  display: grid;
+  grid-template-columns: 118px 128px minmax(0, 1fr) auto 12px;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 16px;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
 }
 .dayhead:hover { background: var(--wash); }
 .date strong { font-weight: 600; font-variant-numeric: tabular-nums; }
-.date span { font-size: 12.5px; color: var(--text-muted); margin-left: 7px; }
-.meta { font-size: 13px; color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.time { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.date span { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
+.meta { font-size: 12.5px; color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .caret { color: var(--text-muted); font-size: 10px; transition: transform 0.15s; }
-
-/* Consecutive empty weekends collapse to one muted line. In a 14-day window
-   that is four full rows of "Weekend / no menu" replaced by two, and the
-   weekday rhythm the page is actually about stays readable. */
 .weekendrow {
-  padding: 8px 18px; border-bottom: 1px solid var(--hairline);
-  background: var(--wash); color: var(--text-muted);
-  font-size: 12.5px; font-variant-numeric: tabular-nums;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--wash);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .day.open .caret { transform: rotate(90deg); }
 
-/* Detail sits inside the day pane, so it is the *pane* width that decides
-   whether the two tables fit side by side — a container query, not a media
-   query, which stays correct however the panes are sized. */
 .detail { display: none; }
-.day.open .detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 34px; padding: 2px 18px 20px 44px; }
-@container (min-width: 700px) {
-  .day.open .detail { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.day.open .detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 28px;
+  padding: 4px 16px 18px 28px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--hairline);
 }
-.detail h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.055em; color: var(--text-muted); font-weight: 600; margin: 14px 0 8px; }
+@container (min-width: 720px) {
+  .day.open .detail { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+}
+.detail-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+.detail h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+  color: var(--text-muted);
+  font-weight: 650;
+  margin: 10px 0 6px;
+}
 
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
-td { padding: 8px 14px 8px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th {
+  text-align: left;
+  font-weight: 620;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: middle;
+}
 tr:last-child td { border-bottom: 0; }
 td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.err { color: var(--critical); font-size: 12px; }
+.err { color: var(--critical); font-size: 11.5px; }
 .scroll { overflow-x: auto; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
 
-.empty { padding: 34px 16px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
-.banner { padding: 11px 15px; border-radius: 9px; font-size: 13.5px; border: 1px solid var(--border); background: var(--surface-1); flex: none; }
-.banner.bad { border-color: var(--critical); color: var(--critical); }
-.banner.ok { border-color: var(--good); color: var(--good); }
+/* ── Manual Dispatch Form & Preview ─────────────────────────────────────── */
+.form-stack { display: flex; flex-direction: column; gap: 14px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.form-group select, .form-group input[type="date"] {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.form-hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.45; }
+.check-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.check-card input { margin-top: 3px; cursor: pointer; }
+.check-card strong { display: block; font-size: 12.5px; font-weight: 600; }
+.check-card span { display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
 
-/* ── Log pane ───────────────────────────────────────────────────────────── */
-/* Stacked rather than columnar: this pane is the narrow one, and a message that
-   wraps to four lines beside a 148px timestamp column wastes the width it has. */
-.logrow { padding: 12px 18px; border-bottom: 1px solid var(--hairline); }
+.callout {
+  padding: 10px 13px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+.callout.warn { border-color: var(--warning); background: var(--warning-bg); color: var(--text-primary); }
+.callout.good { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+
+.discord-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.discord-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 13px 15px;
+}
+.discord-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+  font-variant-numeric: tabular-nums;
+}
+.discord-body {
+  font: 13px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  margin: 0;
+}
+.discord-btn-mock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 560;
+  background: var(--wash);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+/* ── Ratings Bar ────────────────────────────────────────────────────────── */
+.star-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.bar-track {
+  width: 64px;
+  height: 6px;
+  background: var(--wash);
+  border-radius: 999px;
+  overflow: hidden;
+  display: inline-block;
+}
+.bar-fill {
+  height: 100%;
+  background: var(--warning);
+  border-radius: 999px;
+}
+
+/* ── Banners & Logs ─────────────────────────────────────────────────────── */
+.empty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.banner {
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+}
+.banner.bad { border-color: var(--critical); background: var(--critical-bg); color: var(--critical); }
+.banner.ok { border-color: var(--good); background: var(--good-bg); color: var(--good); }
+
+.logrow { padding: 10px 16px; border-bottom: 1px solid var(--hairline); }
 .logrow:last-child { border-bottom: 0; }
-.logrow .head { display: flex; gap: 9px; align-items: baseline; }
-.logrow .ts { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 12px; }
-.lvl-ERROR { color: var(--critical); font-weight: 600; font-size: 11px; letter-spacing: 0.04em; }
-.lvl-WARN { color: var(--serious); font-weight: 600; font-size: 11px; letter-spacing: 0.04em; }
-pre.log { margin: 4px 0 0; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: var(--text-secondary); }
+.logrow .head { display: flex; gap: 8px; align-items: baseline; }
+.logrow .ts { color: var(--text-muted); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.lvl-ERROR { color: var(--critical); font-weight: 650; font-size: 11px; letter-spacing: 0.04em; }
+.lvl-WARN { color: var(--serious); font-weight: 650; font-size: 11px; letter-spacing: 0.04em; }
+.lvl-INFO { color: var(--accent); font-weight: 650; font-size: 11px; letter-spacing: 0.04em; }
+pre.log {
+  margin: 3px 0 0;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+}
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 560;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--good-bg);
+  color: var(--good);
+  white-space: nowrap;
+}
+.auth-gate {
+  max-width: 480px;
+  margin: 48px auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 26px;
+  box-shadow: var(--shadow-sm);
+}
+.auth-gate h2 { margin: 0 0 8px; font-size: 17px; font-weight: 650; }
+.auth-gate p { margin: 0 0 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+.auth-gate code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--wash);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.cmd-output {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
 </style>
 </head>
 <body>
 <div class="app">
 
 <header>
-  <h1>🍱 Lunch bot</h1>
-  <span class="sub" id="subtitle">Loading…</span>
+  <h1>🍱 What's for Lunch — Control Center</h1>
+  <span class="sub" id="subtitle">Connecting…</span>
   <span class="spacer"></span>
-  <label class="field">Window
+  <span class="admin-pill" id="admin-badge" hidden></span>
+  <label class="field" title="History window">Window
     <select id="window">
       <option value="7">7 days</option>
       <option value="14" selected>14 days</option>
@@ -226,37 +665,208 @@ pre.log { margin: 4px 0 0; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo
       <option value="60">60 days</option>
     </select>
   </label>
-  <label class="field"><input type="checkbox" id="auto" style="cursor:pointer"> Auto</label>
-  <button id="theme" title="Toggle theme">◐</button>
+  <label class="field" title="Poll every 20 seconds"><input type="checkbox" id="auto"> Live</label>
+  <button id="btn-token" class="ghost" title="Set or update DASHBOARD_TOKEN">🔑 Token</button>
+  <button id="btn-logout" class="ghost" hidden title="Sign out of your Discord admin session">Sign Out</button>
+  <button id="theme" title="Toggle light/dark/auto theme">◐</button>
   <button id="refresh">Refresh</button>
-  <button id="publish" class="primary" hidden>Re-publish today</button>
+  <button id="quick-dispatch" class="primary">Manual Send…</button>
 </header>
 
 <div id="alert"></div>
+<div id="auth-gate" hidden></div>
 
-<div class="stats" id="stats"></div>
+<!-- Live End-to-End Server & Bot Connection Topology -->
+<section class="topology" id="topology" aria-label="System connection status"></section>
 
-<div class="panes">
-  <section class="panel">
-    <h2>Daily menu &amp; delivery <span class="hint">click a day for servers and dishes</span></h2>
-    <div class="pbody" id="days"><div class="empty">Loading…</div></div>
-  </section>
+<!-- Workspace Navigation & Window KPIs -->
+<nav class="navstrip" aria-label="Dashboard sections">
+  <div class="tabs" role="tablist">
+    <button class="tab active" role="tab" id="tab-deliveries" data-tab="deliveries" aria-selected="true">
+      Deliveries &amp; Menus <span class="tab-badge" id="badge-deliveries">0</span>
+    </button>
+    <button class="tab" role="tab" id="tab-dispatch" data-tab="dispatch" aria-selected="false">
+      Manual Dispatch
+    </button>
+    <button class="tab" role="tab" id="tab-connections" data-tab="connections" aria-selected="false">
+      Servers &amp; Pipeline <span class="tab-badge" id="badge-connections">0</span>
+    </button>
+    <button class="tab" role="tab" id="tab-ratings" data-tab="ratings" aria-selected="false">
+      Dish Ratings
+    </button>
+  </div>
+  <div class="kpis" id="kpis"></div>
+</nav>
 
-  <section class="panel">
-    <h2>Warnings &amp; errors <span class="hint">logs/bot.log</span></h2>
-    <div class="pbody" id="logs"><div class="empty">Loading…</div></div>
-  </section>
-</div>
+<!-- VIEW 1: Deliveries & Logs -->
+<main class="view active" id="view-deliveries">
+  <div class="panes split-main">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Daily Menu &amp; Delivery Log <span class="hint">expand a day to inspect servers, dishes, or re-send</span></h2>
+      </div>
+      <div class="pbody" id="days"><div class="empty">Loading…</div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Bot Log Stream <span class="hint">logs/bot.log</span></h2>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="log-level" title="Minimum log level">
+            <option value="ERROR">Errors only</option>
+            <option value="WARN" selected>Warn &amp; Error</option>
+            <option value="INFO">Info, Warn &amp; Error</option>
+          </select>
+          <input type="search" id="log-search" placeholder="Filter logs…" style="width:130px">
+        </div>
+      </div>
+      <div class="pbody" id="logs"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+</main>
+
+<!-- VIEW 2: Manual Dispatch & Live Post Preview -->
+<section class="view" id="view-dispatch">
+  <div class="panes split-dispatch">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Manual Menu Dispatch <span class="hint">send or retry menus on demand</span></h2>
+      </div>
+      <div class="pbody pad">
+        <div class="form-stack">
+          <div id="dispatch-auth-note"></div>
+
+          <div class="form-group">
+            <label>Quick Presets</label>
+            <div class="presets">
+              <button type="button" class="sm" id="preset-retry-today">Retry missing today</button>
+              <button type="button" class="sm" id="preset-uzumasa-today">Uzumasa today</button>
+              <button type="button" class="sm" id="preset-kameoka-today">Kameoka today</button>
+              <button type="button" class="sm" id="preset-next-menu">Next weekday menu</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="dispatch-date">Menu Date (JST)</label>
+            <input type="date" id="dispatch-date">
+            <span class="form-hint" id="dispatch-date-hint">Select today or any scraped menu date from the database.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="dispatch-campus">Target Campus</label>
+            <select id="dispatch-campus">
+              <option value="">All Campuses (Uzumasa &amp; Kameoka)</option>
+              <option value="Uzumasa">Uzumasa Campus only</option>
+              <option value="Kameoka">Kameoka Campus only</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="dispatch-channel">Target Subscribed Server / Channel</label>
+            <select id="dispatch-channel">
+              <option value="">All active subscribed servers</option>
+            </select>
+            <span class="form-hint">Narrow delivery to a single Discord channel when fixing or testing an issue without pinging every server.</span>
+          </div>
+
+          <label class="check-card" for="dispatch-force">
+            <input type="checkbox" id="dispatch-force">
+            <div>
+              <strong>Force re-send (bypass duplicate guard)</strong>
+              <span>When unchecked, servers that already received this date's menu are safely skipped. Check this to deliberately re-post to a channel that already succeeded today.</span>
+            </div>
+          </label>
+
+          <div style="display:flex;gap:8px;align-items:center;padding-top:4px">
+            <button type="button" class="primary" id="btn-dispatch-send" style="padding:8px 16px;font-size:13.5px;flex:1">
+              Send Menu Now
+            </button>
+            <button type="button" id="btn-dispatch-preview" style="padding:8px 14px">
+              Refresh Preview
+            </button>
+          </div>
+
+          <div class="form-group" style="padding-top:10px;border-top:1px solid var(--hairline)">
+            <label>Admin Quick Commands</label>
+            <div class="cmd-grid">
+              <button type="button" class="sm" data-admin-cmd="check-data">🔎 Check 21-Day Data</button>
+              <button type="button" class="sm" data-admin-cmd="verify-channels">📡 Verify Channel Perms</button>
+              <button type="button" class="sm" data-admin-cmd="ping-test">🩺 Live Ping Test</button>
+              <button type="button" class="sm" data-admin-cmd="repair-campus">🧹 Repair Campus Labels</button>
+            </div>
+            <div class="cmd-output" id="admin-cmd-output" hidden></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Discord Post Preview <span class="hint" id="preview-meta">exact formatted chunks</span></h2>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="preview-campus-picker" title="Preview campus">
+            <option value="Uzumasa">Preview: Uzumasa</option>
+            <option value="Kameoka">Preview: Kameoka</option>
+          </select>
+          <button type="button" class="sm" id="btn-copy-preview">Copy Markdown</button>
+        </div>
+      </div>
+      <div class="pbody pad" id="preview-pane">
+        <div class="empty">Select a date and campus to preview the formatted Discord message.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VIEW 3: Subscribed Servers & Pipeline Data Quality -->
+<section class="view" id="view-connections">
+  <div class="panes split-equal">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Subscribed Discord Servers <span class="hint">live guild membership &amp; channel permissions</span></h2>
+      </div>
+      <div class="pbody pad" id="servers-pane"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Scraper Pipeline &amp; Data Quality <span class="hint">upcoming 21-day menu check</span></h2>
+        <button type="button" class="sm" id="btn-repair-labels" hidden>Repair Mislabelled Rows</button>
+      </div>
+      <div class="pbody pad" id="pipeline-pane"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- VIEW 4: Student Dish Ratings -->
+<section class="view" id="view-ratings">
+  <div class="panes split-equal">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Highest-Rated Dishes <span class="hint" id="ratings-summary-hint">student star ratings</span></h2>
+        <select id="ratings-campus-filter">
+          <option value="">All Campuses</option>
+          <option value="Uzumasa">Uzumasa</option>
+          <option value="Kameoka">Kameoka</option>
+        </select>
+      </div>
+      <div class="pbody pad" id="ratings-top-pane"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Lowest-Rated Dishes <span class="hint">dishes students scored lowest</span></h2>
+      </div>
+      <div class="pbody pad" id="ratings-low-pane"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</section>
 
 </div>
 
 <script>
 'use strict';
 
-// Times are rendered in campus time throughout. The database stores UTC and the
-// publisher runs at 06:00 JST, so a UTC-rendered timestamp shows the previous
-// day for every morning post — the exact confusion this dashboard exists to
-// clear up. Every displayed time is explicitly labelled JST.
 const TZ = 'Asia/Tokyo';
 const TOKEN_KEY = 'wfl-dashboard-token';
 
@@ -271,22 +881,34 @@ const STATUS_LABEL = {
   success: 'Delivered',
   skipped: 'Skipped',
   missing: 'No log row',
+  ready: 'Ready to post',
+  'missing-guild': 'Bot not in server',
+  'missing-channel': 'Channel missing',
+  'missing-permission': 'No send perm',
+  offline: 'Bot offline',
 };
 const STATUS_ICON = {
   delivered: '✓', partial: '◐', failed: '✕', pending: '○',
   'no-menu': '–', 'no-subscribers': '–', weekend: '·',
   success: '✓', skipped: '↷', missing: '✕',
+  ready: '✓', 'missing-guild': '✕', 'missing-channel': '✕', 'missing-permission': '!', offline: '✕',
 };
 
 let token = localStorage.getItem(TOKEN_KEY) || '';
 let timer = null;
+let activeTab = 'deliveries';
+let lastOverview = null;
+let lastHealth = null;
+let lastLogs = { available: true, entries: [] };
+let lastDataHealth = null;
+let lastRatings = null;
+let lastPreviewText = '';
 const openDays = new Set();
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/** Replace a scrolling pane's contents without throwing away where you were. */
 function setPane(el, html) {
   const top = el.scrollTop;
   el.innerHTML = html;
@@ -296,6 +918,16 @@ function setPane(el, html) {
 function chip(status) {
   const label = STATUS_LABEL[status] || status;
   return `<span class="chip s-${esc(status)}"><span class="dot"></span>${STATUS_ICON[status] || ''} ${esc(label)}</span>`;
+}
+
+function formatDuration(sec) {
+  if (!sec || sec < 60) return `${sec || 0}s`;
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 function jstTime(iso) {
@@ -313,78 +945,267 @@ function jstDateTime(iso) {
   }).format(new Date(iso)) + ' JST';
 }
 
+function promptForToken(message = 'Enter DASHBOARD_TOKEN configured in .env:') {
+  const entered = prompt(message, token || '');
+  if (entered !== null) {
+    token = entered.trim();
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+    updateTokenButton();
+    return true;
+  }
+  return false;
+}
+
+let authInfo = null;
+
+function updateTokenButton() {
+  $('btn-token').textContent = token ? '🔑 Token ✓' : '🔑 Token';
+}
+
+function updateAdminHeader(info) {
+  authInfo = info;
+  const badge = $('admin-badge');
+  const logoutBtn = $('btn-logout');
+  const tokenBtn = $('btn-token');
+
+  if (info?.actor?.type === 'discord') {
+    badge.textContent = `👤 @${info.actor.username} · Admin`;
+    badge.hidden = false;
+    logoutBtn.hidden = false;
+  } else if (info?.actor?.type === 'token') {
+    badge.textContent = '🔑 Token Admin';
+    badge.hidden = false;
+    logoutBtn.hidden = true;
+  } else {
+    badge.hidden = true;
+    logoutBtn.hidden = true;
+  }
+
+  if (info && !info.tokenAuthEnabled && info.roleAuthEnabled) {
+    tokenBtn.hidden = true;
+  } else {
+    tokenBtn.hidden = false;
+  }
+}
+
+function setWorkspaceVisible(visible) {
+  $('topology').hidden = !visible;
+  document.querySelector('.navstrip').hidden = !visible;
+  for (const view of document.querySelectorAll('.view')) {
+    view.style.display = visible ? '' : 'none';
+  }
+}
+
+function showAuthGate(info) {
+  setWorkspaceVisible(false);
+  const gate = $('auth-gate');
+  const roleHint = info?.roleAuthEnabled
+    ? `<p><strong>Option 1 — Discord Admin Sign-In (Recommended):</strong><br>Run <code>/dashboard</code> inside your Discord server. If you hold the configured Admin role, the bot will reply privately with your personal 1-click sign-in link.</p>`
+    : '';
+  const tokenHint = info?.tokenAuthEnabled
+    ? `<p><strong>${info?.roleAuthEnabled ? 'Option 2 — ' : ''}Host Token Sign-In:</strong></p>
+       <div style="display:flex;gap:8px;margin-top:6px">
+         <input type="password" id="gate-token-input" placeholder="Enter DASHBOARD_TOKEN…" style="flex:1">
+         <button type="button" class="primary" id="gate-token-submit">Unlock</button>
+       </div>`
+    : '';
+
+  gate.innerHTML = `<div class="auth-gate">
+    <h2>🔒 Admin Access Required</h2>
+    <p>This Control Center dashboard is restricted to authorised server administrators.</p>
+    ${roleHint}
+    ${tokenHint}
+  </div>`;
+  gate.hidden = false;
+
+  const submitBtn = $('gate-token-submit');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', () => {
+      const val = ($('gate-token-input')?.value || '').trim();
+      if (!val) return;
+      token = val;
+      localStorage.setItem(TOKEN_KEY, token);
+      updateTokenButton();
+      load();
+    });
+  }
+}
+
+function hideAuthGate() {
+  $('auth-gate').hidden = true;
+  $('auth-gate').innerHTML = '';
+  setWorkspaceVisible(true);
+}
+
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (token) headers['X-Dashboard-Token'] = token;
 
   const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
-    const entered = prompt('This dashboard requires its DASHBOARD_TOKEN:');
-    if (entered) {
-      token = entered;
-      localStorage.setItem(TOKEN_KEY, entered);
-      return api(path, options);
+    const errBody = await res.json().catch(() => ({}));
+    if (errBody.tokenAuthEnabled && !errBody.roleAuthEnabled) {
+      if (promptForToken('Authentication required — enter DASHBOARD_TOKEN:')) {
+        return api(path, options);
+      }
     }
-    throw new Error('Unauthorised');
+    const err = new Error(errBody.hint || 'Unauthorised — run /dashboard in Discord to sign in');
+    err.status = 401;
+    throw err;
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok && res.status !== 409) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
 }
 
+async function runAdminCommand(command) {
+  const out = $('admin-cmd-output');
+  out.hidden = false;
+  out.textContent = `Running "${command}"…`;
+  try {
+    const res = await api('/api/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    });
+    const icon = res.ok ? '✓' : '⚠️';
+    out.textContent = `${icon} [${command}] ${res.summary}`;
+    banner(`${icon} Command <strong>${esc(command)}</strong>: ${esc(res.summary)}`, res.ok ? 'ok' : 'bad');
+    await load();
+  } catch (err) {
+    out.textContent = `✕ [${command}] ${err.message}`;
+    banner(`Command "${esc(command)}" failed: ${esc(err.message)}`, 'bad');
+  }
+}
+
 function banner(html, kind = '') {
-  $('alert').innerHTML = html ? `<div class="banner ${kind}">${html}</div>` : '';
+  $('alert').innerHTML = html ? `<div class="banner ${kind}"><span>${html}</span></div>` : '';
 }
 
-// ── Rendering ───────────────────────────────────────────────────────────────
+function switchTab(tabName) {
+  activeTab = tabName;
+  for (const btn of document.querySelectorAll('.tab[data-tab]')) {
+    const isCurrent = btn.dataset.tab === tabName;
+    btn.classList.toggle('active', isCurrent);
+    btn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+  }
+  for (const view of document.querySelectorAll('.view')) {
+    view.classList.toggle('active', view.id === `view-${tabName}`);
+  }
+  if (tabName === 'dispatch') loadPreview();
+  if (tabName === 'connections') loadDataHealth();
+  if (tabName === 'ratings') loadRatings();
+}
 
-function renderStats(overview, health) {
-  const s = overview.summary;
-  const last = health.lastDelivery;
-  const attention = s.failed + s.partial;
+// ── Topology & KPIs ─────────────────────────────────────────────────────────
 
-  $('stats').innerHTML = `
-    <div class="stat">
-      <div class="k">Bot</div>
-      <div class="v">${health.discordConnected ? '✓ Online' : '✕ Offline'}</div>
-      <div class="n">${health.guilds} guild${health.guilds === 1 ? '' : 's'} · DB ${health.databaseConnected ? 'connected' : 'unreachable'}</div>
+function renderTopology(overview, health) {
+  const subs = overview.subscriptions || [];
+  const readySubs = subs.filter((s) => s.canSend).length;
+  const horizon = health.pipelineHorizon || [];
+  const horizonText = horizon.length
+    ? horizon.map((h) => `${esc(h.campus)} → ${esc(h.latestDate)} (${h.upcomingDays}d)`).join(' · ')
+    : 'No upcoming rows scraped';
+
+  const dbOk = health.databaseConnected;
+  const dcOk = health.discordConnected;
+  const pool = health.dbPool;
+  const sched = health.scheduler;
+
+  $('topology').innerHTML = `
+    <div class="node">
+      <div class="node-top">
+        <span class="node-label">1 · Bot Host ↔ PostgreSQL</span>
+        ${chip(dbOk ? 'ready' : 'failed')}
+      </div>
+      <div class="node-val">
+        ${dbOk ? 'Connected' : 'Unreachable'}
+        ${health.dbLatencyMs != null ? `<small>${health.dbLatencyMs} ms ping</small>` : ''}
+      </div>
+      <div class="node-meta">
+        ${pool ? `Pool: ${pool.totalCount} open · ${pool.idleCount} idle` : 'PostgreSQL campus_lunch'}
+      </div>
     </div>
-    <div class="stat">
-      <div class="k">Last successful post</div>
-      <div class="v">${last ? esc(last.menuDate) : '—'}</div>
-      <div class="n">${last ? jstDateTime(last.deliveredAt) : 'none on record'}</div>
+
+    <div class="node">
+      <div class="node-top">
+        <span class="node-label">2 · Bot ↔ Discord Gateway</span>
+        ${chip(dcOk ? 'ready' : 'offline')}
+      </div>
+      <div class="node-val">
+        ${dcOk ? esc(health.botUser || 'Connected') : 'Disconnected'}
+        ${health.wsPingMs != null ? `<small>${health.wsPingMs} ms WS</small>` : ''}
+      </div>
+      <div class="node-meta">
+        ${health.guilds} server${health.guilds === 1 ? '' : 's'} · ${readySubs}/${subs.length} channel${subs.length === 1 ? '' : 's'} ready
+      </div>
     </div>
-    <div class="stat">
-      <div class="k">Delivered</div>
-      <div class="v">${s.delivered}<small> / ${s.weekdays}</small></div>
-      <div class="n">weekdays in this window</div>
+
+    <div class="node">
+      <div class="node-top">
+        <span class="node-label">3 · Host Runtime &amp; Scheduler</span>
+        ${chip(sched?.running !== false ? 'delivered' : 'partial')}
+      </div>
+      <div class="node-val">
+        Up ${esc(formatDuration(health.uptimeSeconds))}
+        ${health.host?.rssMb ? `<small>${health.host.rssMb} MB RSS</small>` : ''}
+      </div>
+      <div class="node-meta">
+        ${sched?.nextInvocation ? `Next auto-post: ${jstDateTime(sched.nextInvocation)}` : `Schedule: ${esc(sched?.postingTime || '06:00 JST')}`}
+      </div>
     </div>
-    <div class="stat">
-      <div class="k">Needs attention</div>
-      <div class="v" style="${attention ? 'color:var(--critical)' : ''}">${attention}</div>
-      <div class="n">${s.failed} not delivered · ${s.partial} partial</div>
-    </div>
-    <div class="stat">
-      <div class="k">Quiet days</div>
-      <div class="v">${s.noMenu}</div>
-      <div class="n">no menu — cafeteria closed</div>
+
+    <div class="node">
+      <div class="node-top">
+        <span class="node-label">4 · Scraper Pipeline Horizon</span>
+        ${chip(horizon.length > 0 ? 'delivered' : 'no-menu')}
+      </div>
+      <div class="node-val">
+        ${horizon.length > 0 ? `${horizon.reduce((n, h) => n + h.upcomingItems, 0)} upcoming dishes` : 'No upcoming menu'}
+      </div>
+      <div class="node-meta" title="${esc(horizonText)}">${horizonText}</div>
     </div>`;
+
+  const s = overview.summary;
+  const attention = s.failed + s.partial;
+  const brokenChannels = subs.filter((sub) => !sub.canSend).length;
+
+  $('badge-deliveries').textContent = attention > 0 ? `${attention} issue${attention === 1 ? '' : 's'}` : `${s.delivered}/${s.weekdays}`;
+  $('badge-deliveries').classList.toggle('alert', attention > 0);
+
+  $('badge-connections').textContent = brokenChannels > 0 ? `${brokenChannels} issue` : `${subs.length} ok`;
+  $('badge-connections').classList.toggle('alert', brokenChannels > 0);
+
+  const last = health.lastDelivery;
+  $('kpis').innerHTML = `
+    <span>Delivered: <strong>${s.delivered}/${s.weekdays}</strong> weekdays</span>
+    <span>Attention: <strong style="${attention ? 'color:var(--critical)' : ''}">${attention}</strong></span>
+    <span>Last post: <strong>${last ? esc(last.menuDate) : '—'}</strong></span>`;
 }
 
-function deliveryTable(campuses) {
+// ── View 1: Deliveries & Logs ───────────────────────────────────────────────
+
+function deliveryTable(campuses, menuDate, writeEnabled) {
   const rows = campuses.flatMap((c) => c.deliveries);
   if (rows.length === 0) return '<p class="sub" style="margin:4px 0">No delivery-log rows for this day.</p>';
 
   return `<div class="scroll"><table>
-    <thead><tr><th>Server</th><th>Campus</th><th>Status</th><th class="num">Posted</th><th>Detail</th></tr></thead>
-    <tbody>${rows.map((d) => `
+    <thead><tr><th>Server</th><th>Campus</th><th>Status</th><th class="num">Posted</th><th>Detail</th><th></th></tr></thead>
+    <tbody>${rows.map((d) => {
+      const canAct = writeEnabled && d.channelId;
+      const force = d.status === 'success';
+      const btnLabel = force ? 'Re-send' : 'Retry';
+      return `
       <tr>
         <td>${esc(d.guildName)}${d.channelName ? `<br><span class="sub">#${esc(d.channelName)}</span>` : ''}</td>
         <td>${esc(d.campus)}</td>
         <td>${chip(d.status)}</td>
         <td class="num">${jstTime(d.deliveredAt)}</td>
         <td>${d.errorMessage ? `<span class="err">${esc(d.errorMessage)}</span>` : '—'}</td>
-      </tr>`).join('')}
+        <td class="num">${canAct ? `<button type="button" class="sm" data-row-send="1" data-date="${esc(menuDate)}" data-campus="${esc(d.campus)}" data-channel="${esc(d.channelId)}" data-guild-name="${esc(d.guildName)}" data-force="${force ? '1' : ''}">${btnLabel}</button>` : ''}</td>
+      </tr>`;
+    }).join('')}
     </tbody></table></div>`;
 }
 
@@ -394,19 +1215,15 @@ function menuTable(items) {
   const byCampus = {};
   for (const it of items) (byCampus[it.campus] ||= []).push(it);
 
-  // The price column is what the scraper stored, not what the post shows: a
-  // dropped price field is carried forward from the last scraped one at render
-  // time (db.getLastKnownPrices). Saying so stops "—" reading as "the bot
-  // posted no prices".
   const unpriced = items.filter((it) => it.price == null).length;
   const priceNote = unpriced === 0
     ? ''
-    : `<p class="sub" style="margin:4px 0">${unpriced} row(s) arrived with no scraped price — the posted menu falls back to the last price scraped for that slot, so "—" here does not mean "—" in Discord.</p>`;
+    : `<p class="sub" style="margin:4px 0">${unpriced} row(s) have NULL DB price — student campaign/fallback prices are applied at render time.</p>`;
 
   return priceNote + Object.entries(byCampus).map(([campus, rows]) => `
     <h3>${esc(campus)} — ${rows.length} item${rows.length === 1 ? '' : 's'}</h3>
     <div class="scroll"><table>
-      <thead><tr><th>Category</th><th>Dish</th><th class="num">Price</th><th class="num">kcal</th></tr></thead>
+      <thead><tr><th>Category</th><th>Dish</th><th class="num">Listed</th><th class="num">kcal</th></tr></thead>
       <tbody>${rows.map((r) => `
         <tr>
           <td>${esc(r.category || '—')}${r.subcategory ? `<br><span class="sub">${esc(r.subcategory)}</span>` : ''}</td>
@@ -423,9 +1240,7 @@ function renderDays(overview) {
     return;
   }
 
-  // A weekend with nothing on it is not news. Runs of them collapse into a
-  // single muted line; a weekend that somehow *does* carry a menu or a delivery
-  // stays a full, expandable row, because that would be worth seeing.
+  const writeEnabled = Boolean(overview.publish?.enabled);
   const rows = [];
   for (const d of overview.days) {
     const quiet = !d.isWeekday && d.totalItems === 0 &&
@@ -438,13 +1253,12 @@ function renderDays(overview) {
 
   setPane($('days'), rows.map((row) => {
     if (row.weekend) {
-      // days arrive newest-first, so the run reads backwards
       const first = row.dates[row.dates.length - 1];
       const last = row.dates[0];
       const span = first === last
         ? `${first.dayName.slice(0, 3)} ${first.date}`
         : `${first.dayName.slice(0, 3)} ${first.date} – ${last.dayName.slice(0, 3)} ${last.date}`;
-      return `<div class="weekendrow">${esc(span)} · weekend, no publishing</div>`;
+      return `<div class="weekendrow">${esc(span)} · weekend, no scheduled publishing</div>`;
     }
 
     const d = row.day;
@@ -471,11 +1285,14 @@ function renderDays(overview) {
         </button>
         <div class="detail">
           <section>
-            <h3>Deliveries</h3>
-            ${deliveryTable(d.campuses)}
+            <div class="detail-sec-head">
+              <h3 style="margin:0">Deliveries</h3>
+              <button type="button" class="sm" data-open-dispatch="${esc(d.date)}">Open date in Manual Dispatch →</button>
+            </div>
+            ${deliveryTable(d.campuses, d.date, writeEnabled)}
           </section>
           <section>
-            <h3>Menu</h3>
+            <h3>Scraped Menu</h3>
             <div class="menuslot" data-date="${esc(d.date)}"><span class="sub">Loading menu…</span></div>
           </section>
         </div>
@@ -485,7 +1302,28 @@ function renderDays(overview) {
   for (const btn of document.querySelectorAll('[data-toggle]')) {
     btn.addEventListener('click', () => toggleDay(btn.dataset.toggle));
   }
-  // Days left open across a refresh keep their menu loaded.
+  for (const btn of document.querySelectorAll('[data-open-dispatch]')) {
+    btn.addEventListener('click', () => {
+      $('dispatch-date').value = btn.dataset.openDispatch;
+      switchTab('dispatch');
+    });
+  }
+  for (const btn of document.querySelectorAll('[data-row-send]')) {
+    btn.addEventListener('click', () => {
+      const date = btn.dataset.date;
+      const campus = btn.dataset.campus;
+      const channelId = btn.dataset.channel;
+      const force = btn.dataset.force === '1';
+      const name = btn.dataset.guildName;
+      triggerDispatch({
+        date,
+        campus,
+        channelId,
+        force,
+        confirmText: `${force ? 'Force re-send' : 'Retry sending'} ${campus} menu (${date}) to ${name}?`,
+      });
+    });
+  }
   for (const date of openDays) loadMenu(date);
 }
 
@@ -510,16 +1348,22 @@ function toggleDay(date) {
   if (nowOpen) { openDays.add(date); loadMenu(date); } else { openDays.delete(date); }
 }
 
-function renderLogs(payload) {
+function renderLogs() {
+  const payload = lastLogs;
   if (!payload.available) {
     setPane($('logs'), `<div class="empty">Log file unavailable — ${esc(payload.reason || 'unknown')}</div>`);
     return;
   }
-  if (!payload.entries.length) {
-    setPane($('logs'), '<div class="empty">No warnings or errors in the recent log tail. ✓</div>');
+  const q = ($('log-search').value || '').trim().toLowerCase();
+  const filtered = q
+    ? payload.entries.filter((e) => e.message.toLowerCase().includes(q) || e.timestamp.includes(q))
+    : payload.entries;
+
+  if (!filtered.length) {
+    setPane($('logs'), `<div class="empty">${q ? 'No log entries match your filter.' : 'No entries at this log level. ✓'}</div>`);
     return;
   }
-  setPane($('logs'), payload.entries.map((e) => `
+  setPane($('logs'), filtered.map((e) => `
     <div class="logrow">
       <div class="head">
         <span class="lvl-${esc(e.level)}">${esc(e.level)}</span>
@@ -529,54 +1373,375 @@ function renderLogs(payload) {
     </div>`).join(''));
 }
 
-function renderPublishState(publish) {
-  const btn = $('publish');
-  btn.hidden = !publish.enabled;
-  if (!publish.enabled) return;
+// ── View 2: Manual Dispatch & Live Preview ──────────────────────────────────
 
-  btn.disabled = publish.running;
-  btn.textContent = publish.running ? 'Publishing…' : 'Re-publish today';
+function populateDispatchControls(overview) {
+  const dateInput = $('dispatch-date');
+  if (!dateInput.value && overview.today) {
+    dateInput.value = overview.today;
+  }
 
-  if (publish.running) {
-    banner(`Publish run started ${jstDateTime(publish.startedAt)} — in progress…`);
-  } else if (publish.error) {
-    banner(`Last publish run failed: ${esc(publish.error)}`, 'bad');
-  } else if (publish.finishedAt) {
-    banner(`Last manual publish finished ${jstDateTime(publish.finishedAt)}.`, 'ok');
+  const nextList = (overview.nextMenus || []).filter((n) => n.menuDate);
+  $('dispatch-date-hint').textContent = nextList.length
+    ? `Today in JST is ${overview.today}. Next upcoming scraped menu: ${nextList.map((n) => `${n.campus} (${n.menuDate}, ${n.itemCount} items)`).join(' · ')}.`
+    : `Today in JST is ${overview.today}.`;
+
+  syncChannelDropdown();
+
+  const enabled = Boolean(overview.publish?.enabled);
+  const sendBtn = $('btn-dispatch-send');
+  sendBtn.disabled = !enabled || Boolean(overview.publish?.running);
+
+  if (!enabled) {
+    $('dispatch-auth-note').innerHTML =
+      '<div class="callout warn"><strong>Manual dispatch is currently locked (read-only mode).</strong><br>Set <code>DASHBOARD_TOKEN</code> in the server\'s <code>.env</code> and restart the bot to enable sending menus from the browser.</div>';
+  } else if (!token) {
+    $('dispatch-auth-note').innerHTML =
+      '<div class="callout"><strong>Token protected:</strong> You will be prompted for <code>DASHBOARD_TOKEN</code> when dispatching (or click <strong>🔑 Token</strong> above).</div>';
+  } else {
+    $('dispatch-auth-note').innerHTML = '';
   }
 }
 
-// ── Load cycle ──────────────────────────────────────────────────────────────
+function syncChannelDropdown() {
+  if (!lastOverview) return;
+  const selectedCampus = $('dispatch-campus').value;
+  const select = $('dispatch-channel');
+  const prev = select.value;
+
+  const subs = (lastOverview.subscriptions || []).filter(
+    (s) => !selectedCampus || s.campus === selectedCampus
+  );
+
+  select.innerHTML =
+    '<option value="">All active subscribed servers' +
+    (selectedCampus ? ` (${selectedCampus})` : '') +
+    ` — ${subs.length} channel${subs.length === 1 ? '' : 's'}</option>` +
+    subs.map((s) => {
+      const statusFlag = s.canSend ? '✓' : '✕';
+      return `<option value="${esc(s.channelId)}" data-campus="${esc(s.campus)}">${statusFlag} ${esc(s.guildName)} — #${esc(s.channelName || s.channelId)} (${esc(s.campus)})</option>`;
+    }).join('');
+
+  if ([...select.options].some((o) => o.value === prev)) {
+    select.value = prev;
+  }
+}
+
+async function loadPreview() {
+  const pane = $('preview-pane');
+  const date = $('dispatch-date').value || lastOverview?.today || '';
+  const campus = $('dispatch-campus').value || $('preview-campus-picker').value || 'Uzumasa';
+  $('preview-campus-picker').value = campus;
+
+  if (!date) return;
+  pane.innerHTML = '<div class="empty">Rendering preview…</div>';
+
+  try {
+    const data = await api(`/api/preview?campus=${encodeURIComponent(campus)}&date=${encodeURIComponent(date)}`);
+    if (!data.itemCount || !data.chunks.length) {
+      lastPreviewText = '';
+      $('preview-meta').textContent = `${campus} · ${date} · 0 items`;
+      pane.innerHTML = `<div class="empty">No menu rows in PostgreSQL for <strong>${esc(campus)}</strong> on <strong>${esc(date)}</strong>.</div>`;
+      return;
+    }
+
+    lastPreviewText = data.chunks.join('\n\n');
+    $('preview-meta').textContent = `${data.campus} · ${data.date} · ${data.itemCount} items · ${data.chunks.length} chunk(s) · ${data.totalChars} chars`;
+
+    pane.innerHTML = `<div class="discord-preview">${data.chunks.map((chunk, idx) => `
+      <div class="discord-card">
+        <div class="discord-card-head">
+          <span>Discord Message Chunk ${idx + 1} of ${data.chunks.length}</span>
+          <span>${chunk.length} / 2000 chars</span>
+        </div>
+        <pre class="discord-body">${idx === 0 ? `<span style="color:var(--accent);font-weight:600">@notify-menu-${esc(data.campus.toLowerCase())}</span>\n` : ''}${esc(chunk)}${idx === 0 ? '\n\n<strong>## Tap below to rate the menu</strong>' : ''}</pre>
+        ${idx === 0 ? '<div class="discord-btn-mock">⭐ Rate today\'s dishes</div>' : ''}
+      </div>`).join('')}</div>`;
+  } catch (err) {
+    pane.innerHTML = `<div class="empty"><span class="err">Preview failed: ${esc(err.message)}</span></div>`;
+  }
+}
+
+async function triggerDispatch({ campus, channelId, guildId, date, force, confirmText }) {
+  if (!confirm(confirmText)) return;
+
+  try {
+    const payload = {};
+    if (campus) payload.campus = campus;
+    if (channelId) payload.channelId = channelId;
+    if (guildId) payload.guildId = guildId;
+    if (date) payload.date = date;
+    if (force) payload.force = true;
+
+    const res = await api('/api/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.started) {
+      banner(`Dispatch not started: ${esc(res.reason || 'unknown reason')}`, 'bad');
+      return;
+    }
+
+    renderPublishState(res.publish);
+    const poll = setInterval(async () => {
+      await load();
+      if (!lastOverview?.publish?.running) clearInterval(poll);
+    }, 2000);
+  } catch (err) {
+    banner(`Manual dispatch failed: ${esc(err.message)}`, 'bad');
+  }
+}
+
+function renderPublishState(publish) {
+  if (!publish) return;
+  const sendBtn = $('btn-dispatch-send');
+  if (sendBtn && publish.enabled) {
+    sendBtn.disabled = publish.running;
+    sendBtn.textContent = publish.running ? 'Sending Menu…' : 'Send Menu Now';
+  }
+
+  const targetLabel = publish.target
+    ? [
+        publish.target.campus || 'all campuses',
+        publish.target.channelId ? `channel ${publish.target.channelId}` : 'all channels',
+        publish.target.date || 'today',
+        publish.target.force ? 'forced' : null,
+      ].filter(Boolean).join(' · ')
+    : '';
+
+  if (publish.running) {
+    banner(`⏳ Manual dispatch in progress (${esc(targetLabel)}) — started ${jstTime(publish.startedAt)}…`);
+  } else if (publish.error) {
+    banner(`✕ Last manual dispatch failed: ${esc(publish.error)}`, 'bad');
+  } else if (publish.finishedAt) {
+    const sum = publish.summary
+      ? ` — <strong>${publish.summary.sent} sent</strong>, ${publish.summary.skipped} skipped, ${publish.summary.failed} failed`
+      : '';
+    banner(`✓ Manual dispatch finished at ${jstTime(publish.finishedAt)} (${esc(targetLabel)})${sum}`, 'ok');
+  }
+}
+
+// ── View 3: Subscribed Servers & Pipeline Health ────────────────────────────
+
+function renderServers(overview) {
+  const subs = overview.subscriptions || [];
+  const writeEnabled = Boolean(overview.publish?.enabled);
+  if (!subs.length) {
+    setPane($('servers-pane'), '<div class="empty">No active Discord server subscriptions in PostgreSQL.</div>');
+    return;
+  }
+
+  setPane($('servers-pane'), `<div class="scroll"><table>
+    <thead><tr><th>Discord Server</th><th>Channel</th><th>Campus</th><th>Bot Link &amp; Perms</th><th>Action</th></tr></thead>
+    <tbody>${subs.map((s) => `
+      <tr>
+        <td><strong>${esc(s.guildName)}</strong><br><span class="sub mono">${esc(s.guildId)}</span></td>
+        <td>#${esc(s.channelName || 'unknown')}<br><span class="sub mono">${esc(s.channelId)}</span></td>
+        <td>${esc(s.campus)}</td>
+        <td>${chip(s.connectionStatus)}<br><span class="sub">${esc(s.connectionDetail || '')}</span></td>
+        <td class="num">${writeEnabled ? `<button type="button" class="sm" data-sub-send="1" data-campus="${esc(s.campus)}" data-channel="${esc(s.channelId)}" data-name="${esc(s.guildName)}">Send Today</button>` : '—'}</td>
+      </tr>`).join('')}
+    </tbody></table></div>`);
+
+  for (const btn of document.querySelectorAll('[data-sub-send]')) {
+    btn.addEventListener('click', () => {
+      const campus = btn.dataset.campus;
+      const channelId = btn.dataset.channel;
+      const name = btn.dataset.name;
+      triggerDispatch({
+        campus,
+        channelId,
+        date: overview.today,
+        force: true,
+        confirmText: `Send today's ${campus} menu (${overview.today}) to ${name} right now?`,
+      });
+    });
+  }
+}
+
+async function loadDataHealth() {
+  const pane = $('pipeline-pane');
+  try {
+    const data = await api('/api/data-health');
+    lastDataHealth = data;
+
+    const writeEnabled = Boolean(lastOverview?.publish?.enabled);
+    const canRepair = writeEnabled && data.repairPreview?.relabelled > 0;
+    const repairBtn = $('btn-repair-labels');
+    repairBtn.hidden = !canRepair;
+    if (canRepair) {
+      repairBtn.textContent = `Repair ${data.repairPreview.relabelled} Mislabelled Row(s)`;
+    }
+
+    const statusHtml = data.ok
+      ? `<div class="callout good"><strong>✓ All upcoming menu checks passed (${esc(data.from)} → ${esc(data.to)})</strong><br>${data.checked.rows} scraped rows across ${data.checked.weekdays.length} upcoming weekday(s).</div>`
+      : `<div class="callout warn"><strong>⚠️ ${data.problems.length} data quality issue(s) detected (${esc(data.from)} → ${esc(data.to)})</strong><ul style="margin:6px 0 0;padding-left:18px">${data.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`;
+
+    const repairHtml = data.repairPreview?.relabelled > 0
+      ? `<div class="callout warn" style="margin-top:10px"><strong>🧹 Provable campus-label repair available:</strong> ${data.repairPreview.relabelled} row(s) filed under an unknown campus can be automatically relabelled.</div>`
+      : '';
+
+    const covRows = data.coverage || [];
+    const tableHtml = covRows.length
+      ? `<h3 style="font-size:11px;text-transform:uppercase;color:var(--text-muted);margin:14px 0 6px">Upcoming Scraped Coverage</h3>
+         <div class="scroll"><table>
+           <thead><tr><th>Date</th><th class="num">Uzumasa</th><th class="num">Kameoka</th><th class="num">Kameoka Priced</th></tr></thead>
+           <tbody>${covRows.map((r) => {
+             const u = r.campuses.Uzumasa?.count || 0;
+             const k = r.campuses.Kameoka?.count || 0;
+             const kp = r.campuses.Kameoka?.priced || 0;
+             return `<tr>
+               <td class="mono">${esc(r.date)}</td>
+               <td class="num" style="${u < 4 ? 'color:var(--critical);font-weight:600' : ''}">${u} items</td>
+               <td class="num" style="${k < 4 ? 'color:var(--critical);font-weight:600' : ''}">${k} items</td>
+               <td class="num" style="${k > 0 && kp === 0 ? 'color:var(--warning)' : ''}">${kp}/${k}</td>
+             </tr>`;
+           }).join('')}</tbody>
+         </table></div>`
+      : '<p class="sub" style="margin-top:12px">No upcoming weekday menus scraped in this window yet.</p>';
+
+    setPane(pane, statusHtml + repairHtml + tableHtml);
+  } catch (err) {
+    setPane(pane, `<div class="empty"><span class="err">Could not load pipeline health: ${esc(err.message)}</span></div>`);
+  }
+}
+
+// ── View 4: Dish Ratings Leaderboard ────────────────────────────────────────
+
+async function loadRatings() {
+  try {
+    if (!lastRatings) {
+      lastRatings = await api('/api/ratings');
+    }
+    renderRatings();
+  } catch (err) {
+    setPane($('ratings-top-pane'), `<div class="empty"><span class="err">Failed to load ratings: ${esc(err.message)}</span></div>`);
+  }
+}
+
+function renderRatings() {
+  if (!lastRatings) return;
+  const campusFilter = $('ratings-campus-filter').value;
+  $('ratings-summary-hint').textContent =
+    `${lastRatings.totalRatings} rating(s) · ${lastRatings.distinctDishes} dishes · ${lastRatings.distinctVoters} student(s)`;
+
+  const renderList = (list, emptyMsg) => {
+    const filtered = campusFilter ? list.filter((d) => d.campus === campusFilter) : list;
+    if (!filtered.length) return `<div class="empty">${esc(emptyMsg)}</div>`;
+    return `<div class="scroll"><table>
+      <thead><tr><th>Dish</th><th>Campus</th><th>Score</th><th class="num">Votes</th><th class="num">Last Seen</th></tr></thead>
+      <tbody>${filtered.map((d) => `
+        <tr>
+          <td><strong>${esc(d.dishName)}</strong></td>
+          <td>${esc(d.campus)}</td>
+          <td>
+            <span class="star-bar">
+              ★ ${d.avgRating.toFixed(2)}
+              <span class="bar-track"><span class="bar-fill" style="width:${Math.round((d.avgRating / 5) * 100)}%"></span></span>
+            </span>
+          </td>
+          <td class="num">${d.ratingCount}</td>
+          <td class="num mono">${esc(d.lastMenuDate || '—')}</td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
+  };
+
+  setPane($('ratings-top-pane'), renderList(lastRatings.topDishes || [], 'No dish ratings recorded yet.'));
+  setPane($('ratings-low-pane'), renderList(lastRatings.lowestDishes || [], 'No dish ratings recorded yet.'));
+}
+
+// ── Main Load Cycle ─────────────────────────────────────────────────────────
 
 async function load() {
   const days = $('window').value;
+  const logLevel = $('log-level').value || 'WARN';
   try {
+    const headers = token ? { 'X-Dashboard-Token': token } : {};
+    const me = await fetch('/api/me', { headers }).then((r) => r.json());
+    updateAdminHeader(me);
+
+    if (me.authRequired && !me.authenticated) {
+      $('subtitle').textContent = 'Admin sign-in required';
+      showAuthGate(me);
+      return;
+    }
+
+    hideAuthGate();
+
     const [health, overview, logs] = await Promise.all([
       fetch('/api/status').then((r) => r.json()),
       api(`/api/overview?days=${days}`),
-      api('/api/logs?level=WARN&limit=80'),
+      api(`/api/logs?level=${encodeURIComponent(logLevel)}&limit=120`),
     ]);
 
-    renderStats(overview, health);
+    lastHealth = health;
+    lastOverview = overview;
+    lastLogs = logs;
+    lastRatings = null;
+
+    renderTopology(overview, health);
     renderDays(overview);
-    renderLogs(logs);
+    renderLogs();
+    populateDispatchControls(overview);
+    renderServers(overview);
     renderPublishState(overview.publish);
 
+    if (activeTab === 'connections') loadDataHealth();
+    if (activeTab === 'ratings') loadRatings();
+
     $('subtitle').textContent =
-      `${overview.from} → ${overview.to} · today ${overview.today} JST · refreshed ${jstTime(overview.generatedAt)}`;
+      `${overview.from} → ${overview.to} · today ${overview.today} JST · synced ${jstTime(overview.generatedAt)}`;
 
     if (!overview.publish.running && !overview.publish.error && !overview.publish.finishedAt) banner('');
   } catch (err) {
+    if (err.status === 401) {
+      showAuthGate(authInfo || { roleAuthEnabled: true, tokenAuthEnabled: true });
+      return;
+    }
     banner(`Could not load dashboard: ${esc(err.message)}`, 'bad');
   }
 }
 
+// ── Event Wiring ────────────────────────────────────────────────────────────
+
+for (const btn of document.querySelectorAll('.tab[data-tab]')) {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+}
+
+for (const btn of document.querySelectorAll('[data-admin-cmd]')) {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.adminCmd;
+    if (cmd === 'repair-campus' && !confirm('Relabel provable unknown-campus menu rows in PostgreSQL now?')) {
+      return;
+    }
+    runAdminCommand(cmd);
+  });
+}
+
+$('quick-dispatch').addEventListener('click', () => switchTab('dispatch'));
 $('refresh').addEventListener('click', load);
 $('window').addEventListener('change', load);
+$('log-level').addEventListener('change', load);
+$('log-search').addEventListener('input', renderLogs);
+
+$('btn-token').addEventListener('click', () => {
+  if (promptForToken()) load();
+});
+
+$('btn-logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  token = '';
+  localStorage.removeItem(TOKEN_KEY);
+  updateTokenButton();
+  banner('Signed out of Control Center.', 'ok');
+  load();
+});
 
 $('auto').addEventListener('change', (e) => {
   clearInterval(timer);
-  timer = e.target.checked ? setInterval(load, 30000) : null;
+  timer = e.target.checked ? setInterval(load, 20000) : null;
 });
 
 $('theme').addEventListener('click', () => {
@@ -587,23 +1752,108 @@ $('theme').addEventListener('click', () => {
 });
 document.documentElement.dataset.theme = localStorage.getItem('wfl-theme') || 'auto';
 
-$('publish').addEventListener('click', async () => {
-  if (!confirm("Re-run the publisher for today?\n\nGuilds that already received today's menu are skipped, so this only retries the ones that failed.")) return;
+$('dispatch-campus').addEventListener('change', () => {
+  syncChannelDropdown();
+  if ($('dispatch-campus').value) {
+    $('preview-campus-picker').value = $('dispatch-campus').value;
+  }
+  loadPreview();
+});
+$('dispatch-date').addEventListener('change', loadPreview);
+$('preview-campus-picker').addEventListener('change', loadPreview);
+$('btn-dispatch-preview').addEventListener('click', loadPreview);
+
+$('btn-copy-preview').addEventListener('click', async () => {
+  if (!lastPreviewText) return;
   try {
-    const res = await api('/api/publish', { method: 'POST' });
-    if (!res.started) banner(`Not started: ${esc(res.reason)}`, 'bad');
-    renderPublishState(res.publish);
-    // Poll while the run is in flight so the result appears without a manual refresh.
-    const poll = setInterval(async () => {
-      await load();
-      const state = await api('/api/overview?days=1');
-      if (!state.publish.running) clearInterval(poll);
-    }, 3000);
-  } catch (err) {
-    banner(`Publish failed: ${esc(err.message)}`, 'bad');
+    await navigator.clipboard.writeText(lastPreviewText);
+    const btn = $('btn-copy-preview');
+    const old = btn.textContent;
+    btn.textContent = 'Copied ✓';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  } catch {
+    // ignore clipboard restrictions
   }
 });
 
+$('preset-retry-today').addEventListener('click', () => {
+  if (lastOverview?.today) $('dispatch-date').value = lastOverview.today;
+  $('dispatch-campus').value = '';
+  syncChannelDropdown();
+  $('dispatch-channel').value = '';
+  $('dispatch-force').checked = false;
+  loadPreview();
+});
+
+$('preset-uzumasa-today').addEventListener('click', () => {
+  if (lastOverview?.today) $('dispatch-date').value = lastOverview.today;
+  $('dispatch-campus').value = 'Uzumasa';
+  syncChannelDropdown();
+  $('dispatch-force').checked = true;
+  loadPreview();
+});
+
+$('preset-kameoka-today').addEventListener('click', () => {
+  if (lastOverview?.today) $('dispatch-date').value = lastOverview.today;
+  $('dispatch-campus').value = 'Kameoka';
+  syncChannelDropdown();
+  $('dispatch-force').checked = true;
+  loadPreview();
+});
+
+$('preset-next-menu').addEventListener('click', () => {
+  const next = (lastOverview?.nextMenus || []).find((n) => n.menuDate);
+  if (next) {
+    $('dispatch-date').value = next.menuDate;
+    $('dispatch-campus').value = next.campus;
+    syncChannelDropdown();
+    loadPreview();
+  }
+});
+
+$('btn-dispatch-send').addEventListener('click', () => {
+  const date = $('dispatch-date').value || lastOverview?.today;
+  const campusSelect = $('dispatch-campus').value;
+  const channelSelect = $('dispatch-channel');
+  const channelId = channelSelect.value;
+  const opt = channelSelect.selectedOptions[0];
+  const inferredCampus = campusSelect || opt?.dataset?.campus || '';
+  const force = $('dispatch-force').checked;
+
+  const targetText = channelId
+    ? opt.textContent.replace(/^[✓✕]\s*/, '')
+    : inferredCampus
+      ? `all ${inferredCampus} subscribers`
+      : 'ALL subscribed servers across both campuses';
+
+  triggerDispatch({
+    date,
+    campus: inferredCampus || undefined,
+    channelId: channelId || undefined,
+    force,
+    confirmText:
+      `Dispatch menu for ${date} to ${targetText}?\n\n` +
+      (force
+        ? '⚠️ Force re-send is ON: servers will receive this post even if they already received it earlier.'
+        : 'Safe retry mode: servers that already received this menu will be skipped.'),
+  });
+});
+
+$('btn-repair-labels').addEventListener('click', async () => {
+  if (!confirm('Relabel provable unknown-campus menu rows in PostgreSQL now?')) return;
+  try {
+    const res = await api('/api/repair', { method: 'POST' });
+    banner(`✓ Repaired ${res.report.relabelled} mislabelled row(s) (${res.report.deleted} duplicate(s) removed).`, 'ok');
+    await loadDataHealth();
+    await load();
+  } catch (err) {
+    banner(`Campus label repair failed: ${esc(err.message)}`, 'bad');
+  }
+});
+
+$('ratings-campus-filter').addEventListener('change', renderRatings);
+
+updateTokenButton();
 load();
 </script>
 </body>
