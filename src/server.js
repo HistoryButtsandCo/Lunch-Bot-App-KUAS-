@@ -33,6 +33,7 @@ const { checkMenuData, publishingDays, KNOWN_CAMPUSES } = require('./utils/dataQ
 const { buildOverview } = require('./dashboard/overview');
 const logTail = require('./dashboard/logTail');
 const publishRunner = require('./dashboard/publishRunner');
+const dashboardAuth = require('./dashboard/auth');
 const menuPublisher = require('./publishers/menuPublisher');
 
 let startTime = null; // set when the bot comes online
@@ -364,36 +365,83 @@ function suppliedToken(req, url) {
   return req.headers['x-dashboard-token'] || url.searchParams.get('token') || '';
 }
 
-/**
- * Gate for the dashboard's read endpoints. Open when no token is configured;
- * strict when one is. Returns true if the request may proceed.
- */
-function guardRead(req, res, url) {
-  if (!publishRunner.isEnabled()) return true;
-  if (publishRunner.isAuthorised(suppliedToken(req, url))) return true;
-
-  sendJson(res, 401, { error: 'Unauthorised', hint: 'Supply the X-Dashboard-Token header' });
-  return false;
+function isAuthConfigured() {
+  return publishRunner.isEnabled() || dashboardAuth.isRoleAuthEnabled();
 }
 
 /**
- * Gate for state-changing endpoints (`/api/publish`, `/api/repair`). Disabled
- * completely when DASHBOARD_TOKEN is unset.
+ * Resolve the authenticated admin actor from either a valid DASHBOARD_TOKEN
+ * or a signed Discord-role session cookie issued via `/dashboard`.
+ *
+ * @returns {{type: 'token'|'discord', username: string, userId?: string, guildId?: string|null}|null}
+ */
+function resolveActor(req, url) {
+  if (publishRunner.isEnabled() && publishRunner.isAuthorised(suppliedToken(req, url))) {
+    return { type: 'token', username: 'Token Admin' };
+  }
+  const session = dashboardAuth.getSessionFromRequest(req, clientRef);
+  if (session) {
+    return {
+      type: 'discord',
+      userId: session.userId,
+      username: session.username,
+      guildId: session.guildId,
+    };
+  }
+  return null;
+}
+
+function formatActorLabel(actor, req) {
+  if (actor?.type === 'discord') {
+    return `dashboard (@${actor.username} / ${actor.userId})`;
+  }
+  return `dashboard (${req.socket?.remoteAddress || 'token'})`;
+}
+
+/**
+ * Gate for the dashboard's read endpoints. Open when neither DASHBOARD_TOKEN
+ * nor DASHBOARD_ADMIN_ROLE_ID is configured; strict when either is set.
+ * Returns the actor (or `{ type: 'open' }`) if allowed, or null if rejected.
+ */
+function guardRead(req, res, url) {
+  if (!isAuthConfigured()) return { type: 'open', username: 'LAN Guest' };
+  const actor = resolveActor(req, url);
+  if (actor) return actor;
+
+  sendJson(res, 401, {
+    error: 'Unauthorised',
+    roleAuthEnabled: dashboardAuth.isRoleAuthEnabled(),
+    tokenAuthEnabled: publishRunner.isEnabled(),
+    hint: dashboardAuth.isRoleAuthEnabled()
+      ? 'Run /dashboard in Discord with an authorised Admin role, or supply X-Dashboard-Token'
+      : 'Supply the X-Dashboard-Token header',
+  });
+  return null;
+}
+
+/**
+ * Gate for state-changing endpoints (`/api/publish`, `/api/repair`, `/api/command`).
+ * Disabled completely when neither DASHBOARD_TOKEN nor DASHBOARD_ADMIN_ROLE_ID is set.
  */
 function guardWrite(req, res, url) {
-  if (!publishRunner.isEnabled()) {
+  if (!isAuthConfigured()) {
     sendJson(res, 503, {
       error: 'Dashboard write actions are disabled',
-      hint: 'Set DASHBOARD_TOKEN in .env and restart the bot to enable manual actions',
+      hint: 'Set DASHBOARD_ADMIN_ROLE_ID or DASHBOARD_TOKEN in .env and restart the bot',
     });
-    return false;
+    return null;
   }
-  if (!publishRunner.isAuthorised(suppliedToken(req, url))) {
+  const actor = resolveActor(req, url);
+  if (!actor) {
     logger.warn(`🔒 Rejected unauthorised dashboard write attempt on ${url.pathname} from ${req.socket?.remoteAddress}`);
-    sendJson(res, 401, { error: 'Unauthorised' });
-    return false;
+    sendJson(res, 401, {
+      error: 'Unauthorised',
+      roleAuthEnabled: dashboardAuth.isRoleAuthEnabled(),
+      tokenAuthEnabled: publishRunner.isEnabled(),
+    });
+    return null;
   }
-  return true;
+  return actor;
 }
 
 async function handleRequest(req, res) {
@@ -407,9 +455,74 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // ── 1-click Discord admin ticket exchange ─────────────────────────────────
+  if (route === '/dashboard/auth') {
+    const ticket = url.searchParams.get('ticket') || '';
+    const identity = dashboardAuth.consumeLoginTicket(ticket);
+    if (!identity) {
+      const html =
+        '<!doctype html><html><body style="font-family:system-ui,sans-serif;max-width:460px;margin:72px auto;padding:24px;line-height:1.5">' +
+        '<h2>🔒 Login link expired or already used</h2>' +
+        '<p>Run <code>/dashboard</code> in Discord again to get a fresh 1-click admin login link.</p>' +
+        '<p><a href="/dashboard">Return to Control Center</a></p>' +
+        '</body></html>';
+      res.writeHead(401, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': Buffer.byteLength(html),
+        'Cache-Control': 'no-store',
+      });
+      res.end(html);
+      return;
+    }
+
+    const sessionToken = dashboardAuth.createSessionToken(identity);
+    logger.info(`✅ Admin dashboard session started for @${identity.username} (${identity.userId})`);
+    res.writeHead(302, {
+      Location: '/dashboard',
+      'Set-Cookie': dashboardAuth.buildSetCookieHeader(sessionToken, req),
+      'Cache-Control': 'no-store',
+    });
+    res.end();
+    return;
+  }
+
+  // ── Auth session introspection & logout ───────────────────────────────────
+  if (route === '/api/me') {
+    const authRequired = isAuthConfigured();
+    const actor = authRequired ? resolveActor(req, url) : { type: 'open', username: 'LAN Guest' };
+    sendJson(res, 200, {
+      authenticated: Boolean(actor),
+      authRequired,
+      roleAuthEnabled: dashboardAuth.isRoleAuthEnabled(),
+      tokenAuthEnabled: publishRunner.isEnabled(),
+      writeEnabled: authRequired && Boolean(actor),
+      adminRoleIds: dashboardAuth.getAllowedRoleIds(),
+      actor: actor
+        ? { type: actor.type, username: actor.username, userId: actor.userId || null }
+        : null,
+    });
+    return;
+  }
+
+  if (route === '/api/logout') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'Use POST' });
+      return;
+    }
+    const payload = JSON.stringify({ ok: true });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      'Set-Cookie': dashboardAuth.buildClearCookieHeader(req),
+      'Cache-Control': 'no-store',
+    });
+    res.end(payload);
+    return;
+  }
+
   // ── The dashboard page itself ─────────────────────────────────────────────
-  // Served unauthenticated even when a token is set: it is a static shell with
-  // no data in it, and it needs to load in order to prompt for the token.
+  // Served unauthenticated even when auth is enabled: it is a static shell with
+  // no data in it, and it renders the admin sign-in prompt if /api/overview returns 401.
   if (route === '/dashboard') {
     const html = await fs.promises.readFile(DASHBOARD_HTML);
     res.writeHead(200, {
@@ -482,13 +595,14 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // ── Write endpoints (require DASHBOARD_TOKEN) ─────────────────────────────
+  // ── Write endpoints (require Admin role session OR DASHBOARD_TOKEN) ───────
   if (route === '/api/publish') {
     if (req.method !== 'POST') {
       sendJson(res, 405, { error: 'Use POST' });
       return;
     }
-    if (!guardWrite(req, res, url)) return;
+    const actor = guardWrite(req, res, url);
+    if (!actor) return;
 
     let body = {};
     try {
@@ -498,9 +612,12 @@ async function handleRequest(req, res) {
       return;
     }
 
-    const result = publishRunner.trigger(clientRef, `dashboard (${req.socket?.remoteAddress})`, body);
+    const result = publishRunner.trigger(clientRef, formatActorLabel(actor, req), body);
     const statusCode = result.started ? 202 : /already in progress|not connected/i.test(result.reason || '') ? 409 : 400;
-    sendJson(res, statusCode, { ...result, publish: publishRunner.getState() });
+    sendJson(res, statusCode, {
+      ...result,
+      publish: { ...publishRunner.getState(), enabled: isAuthConfigured() },
+    });
     return;
   }
 
@@ -509,13 +626,109 @@ async function handleRequest(req, res) {
       sendJson(res, 405, { error: 'Use POST' });
       return;
     }
-    if (!guardWrite(req, res, url)) return;
+    const actor = guardWrite(req, res, url);
+    if (!actor) return;
 
     const windowDays = Math.min(Math.max(parseInt(process.env.DATA_CHECK_WINDOW_DAYS, 10) || 21, 1), 90);
     const today = todayCampus();
     const to = shiftDate(today, windowDays);
+    logger.info(`🧹 Campus label repair triggered by ${formatActorLabel(actor, req)}`);
     const report = await db.repairUnknownCampus(today, to, { apply: true });
     sendJson(res, 200, { ok: true, report });
+    return;
+  }
+
+  if (route === '/api/command') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'Use POST' });
+      return;
+    }
+    const actor = guardWrite(req, res, url);
+    if (!actor) return;
+
+    let body = {};
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+      return;
+    }
+
+    const command = String(body.command || '').trim().toLowerCase();
+    const actorLabel = formatActorLabel(actor, req);
+
+    if (command === 'check-data') {
+      logger.info(`🔎 Admin command "check-data" triggered by ${actorLabel}`);
+      const health = await buildDataHealth();
+      sendJson(res, 200, {
+        ok: health.ok,
+        command,
+        summary: health.ok
+          ? `All upcoming checks passed (${health.checked.rows} rows across ${health.checked.weekdays.length} weekdays)`
+          : `${health.problems.length} issue(s) found; ${health.repairPreview.relabelled} row(s) auto-repairable`,
+        result: health,
+      });
+      return;
+    }
+
+    if (command === 'repair-campus') {
+      logger.info(`🧹 Admin command "repair-campus" triggered by ${actorLabel}`);
+      const windowDays = Math.min(Math.max(parseInt(process.env.DATA_CHECK_WINDOW_DAYS, 10) || 21, 1), 90);
+      const today = todayCampus();
+      const to = shiftDate(today, windowDays);
+      const report = await db.repairUnknownCampus(today, to, { apply: true });
+      sendJson(res, 200, {
+        ok: true,
+        command,
+        summary: `Repaired ${report.relabelled} mislabelled row(s), removed ${report.deleted} duplicate(s)`,
+        result: report,
+      });
+      return;
+    }
+
+    if (command === 'verify-channels') {
+      logger.info(`📡 Admin command "verify-channels" triggered by ${actorLabel}`);
+      const subs = await db.getActiveSubscriptions();
+      const checked = subs.map((sub) => inspectSubscriptionConnection(clientRef, sub));
+      const ready = checked.filter((c) => c.canSend).length;
+      sendJson(res, 200, {
+        ok: ready === checked.length,
+        command,
+        summary: `${ready}/${checked.length} subscribed channel(s) reachable with SendMessages permission`,
+        result: checked,
+      });
+      return;
+    }
+
+    if (command === 'ping-test') {
+      logger.info(`🩺 Admin command "ping-test" triggered by ${actorLabel}`);
+      const status = await buildStatus();
+      sendJson(res, 200, {
+        ok: status.healthy,
+        command,
+        summary: `DB ${status.databaseConnected ? `${status.dbLatencyMs}ms` : 'DOWN'} · Discord ${status.discordConnected ? `${status.wsPingMs ?? '—'}ms` : 'OFFLINE'} · Next post ${status.scheduler?.postingTime || '06:00 JST'}`,
+        result: status,
+      });
+      return;
+    }
+
+    if (command === 'publish') {
+      const result = publishRunner.trigger(clientRef, actorLabel, body.options || {});
+      const statusCode = result.started ? 202 : /already in progress|not connected/i.test(result.reason || '') ? 409 : 400;
+      sendJson(res, statusCode, {
+        ok: result.started,
+        command,
+        summary: result.started ? 'Manual menu dispatch started' : result.reason,
+        result,
+        publish: { ...publishRunner.getState(), enabled: isAuthConfigured() },
+      });
+      return;
+    }
+
+    sendJson(res, 400, {
+      error: `Unknown command "${command}"`,
+      supportedCommands: ['check-data', 'repair-campus', 'verify-channels', 'ping-test', 'publish'],
+    });
     return;
   }
 
@@ -545,8 +758,10 @@ function start(client) {
   server.listen(PORT, () => {
     logger.info(`🩺 Health endpoint listening on port ${PORT}`);
     logger.info(`🖥️  Admin dashboard at http://<host>:${PORT}/dashboard`);
-    if (!publishRunner.isEnabled()) {
-      logger.info('ℹ️  DASHBOARD_TOKEN unset — dashboard is read-only');
+    if (dashboardAuth.isRoleAuthEnabled()) {
+      logger.info(`🔐 Role-based admin dashboard access enabled for role(s): ${dashboardAuth.getAllowedRoleIds().join(', ')}`);
+    } else if (!publishRunner.isEnabled()) {
+      logger.info('ℹ️  DASHBOARD_TOKEN and DASHBOARD_ADMIN_ROLE_ID unset — dashboard is read-only');
     }
   });
 

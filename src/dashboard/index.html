@@ -599,6 +599,54 @@ pre.log {
   word-break: break-word;
   color: var(--text-secondary);
 }
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 560;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--good-bg);
+  color: var(--good);
+  white-space: nowrap;
+}
+.auth-gate {
+  max-width: 480px;
+  margin: 48px auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 26px;
+  box-shadow: var(--shadow-sm);
+}
+.auth-gate h2 { margin: 0 0 8px; font-size: 17px; font-weight: 650; }
+.auth-gate p { margin: 0 0 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+.auth-gate code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--wash);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.cmd-output {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
 </style>
 </head>
 <body>
@@ -608,6 +656,7 @@ pre.log {
   <h1>🍱 What's for Lunch — Control Center</h1>
   <span class="sub" id="subtitle">Connecting…</span>
   <span class="spacer"></span>
+  <span class="admin-pill" id="admin-badge" hidden></span>
   <label class="field" title="History window">Window
     <select id="window">
       <option value="7">7 days</option>
@@ -618,12 +667,14 @@ pre.log {
   </label>
   <label class="field" title="Poll every 20 seconds"><input type="checkbox" id="auto"> Live</label>
   <button id="btn-token" class="ghost" title="Set or update DASHBOARD_TOKEN">🔑 Token</button>
+  <button id="btn-logout" class="ghost" hidden title="Sign out of your Discord admin session">Sign Out</button>
   <button id="theme" title="Toggle light/dark/auto theme">◐</button>
   <button id="refresh">Refresh</button>
   <button id="quick-dispatch" class="primary">Manual Send…</button>
 </header>
 
 <div id="alert"></div>
+<div id="auth-gate" hidden></div>
 
 <!-- Live End-to-End Server & Bot Connection Topology -->
 <section class="topology" id="topology" aria-label="System connection status"></section>
@@ -733,6 +784,17 @@ pre.log {
             <button type="button" id="btn-dispatch-preview" style="padding:8px 14px">
               Refresh Preview
             </button>
+          </div>
+
+          <div class="form-group" style="padding-top:10px;border-top:1px solid var(--hairline)">
+            <label>Admin Quick Commands</label>
+            <div class="cmd-grid">
+              <button type="button" class="sm" data-admin-cmd="check-data">🔎 Check 21-Day Data</button>
+              <button type="button" class="sm" data-admin-cmd="verify-channels">📡 Verify Channel Perms</button>
+              <button type="button" class="sm" data-admin-cmd="ping-test">🩺 Live Ping Test</button>
+              <button type="button" class="sm" data-admin-cmd="repair-campus">🧹 Repair Campus Labels</button>
+            </div>
+            <div class="cmd-output" id="admin-cmd-output" hidden></div>
           </div>
         </div>
       </div>
@@ -895,8 +957,85 @@ function promptForToken(message = 'Enter DASHBOARD_TOKEN configured in .env:') {
   return false;
 }
 
+let authInfo = null;
+
 function updateTokenButton() {
   $('btn-token').textContent = token ? '🔑 Token ✓' : '🔑 Token';
+}
+
+function updateAdminHeader(info) {
+  authInfo = info;
+  const badge = $('admin-badge');
+  const logoutBtn = $('btn-logout');
+  const tokenBtn = $('btn-token');
+
+  if (info?.actor?.type === 'discord') {
+    badge.textContent = `👤 @${info.actor.username} · Admin`;
+    badge.hidden = false;
+    logoutBtn.hidden = false;
+  } else if (info?.actor?.type === 'token') {
+    badge.textContent = '🔑 Token Admin';
+    badge.hidden = false;
+    logoutBtn.hidden = true;
+  } else {
+    badge.hidden = true;
+    logoutBtn.hidden = true;
+  }
+
+  if (info && !info.tokenAuthEnabled && info.roleAuthEnabled) {
+    tokenBtn.hidden = true;
+  } else {
+    tokenBtn.hidden = false;
+  }
+}
+
+function setWorkspaceVisible(visible) {
+  $('topology').hidden = !visible;
+  document.querySelector('.navstrip').hidden = !visible;
+  for (const view of document.querySelectorAll('.view')) {
+    view.style.display = visible ? '' : 'none';
+  }
+}
+
+function showAuthGate(info) {
+  setWorkspaceVisible(false);
+  const gate = $('auth-gate');
+  const roleHint = info?.roleAuthEnabled
+    ? `<p><strong>Option 1 — Discord Admin Sign-In (Recommended):</strong><br>Run <code>/dashboard</code> inside your Discord server. If you hold the configured Admin role, the bot will reply privately with your personal 1-click sign-in link.</p>`
+    : '';
+  const tokenHint = info?.tokenAuthEnabled
+    ? `<p><strong>${info?.roleAuthEnabled ? 'Option 2 — ' : ''}Host Token Sign-In:</strong></p>
+       <div style="display:flex;gap:8px;margin-top:6px">
+         <input type="password" id="gate-token-input" placeholder="Enter DASHBOARD_TOKEN…" style="flex:1">
+         <button type="button" class="primary" id="gate-token-submit">Unlock</button>
+       </div>`
+    : '';
+
+  gate.innerHTML = `<div class="auth-gate">
+    <h2>🔒 Admin Access Required</h2>
+    <p>This Control Center dashboard is restricted to authorised server administrators.</p>
+    ${roleHint}
+    ${tokenHint}
+  </div>`;
+  gate.hidden = false;
+
+  const submitBtn = $('gate-token-submit');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', () => {
+      const val = ($('gate-token-input')?.value || '').trim();
+      if (!val) return;
+      token = val;
+      localStorage.setItem(TOKEN_KEY, token);
+      updateTokenButton();
+      load();
+    });
+  }
+}
+
+function hideAuthGate() {
+  $('auth-gate').hidden = true;
+  $('auth-gate').innerHTML = '';
+  setWorkspaceVisible(true);
 }
 
 async function api(path, options = {}) {
@@ -905,14 +1044,39 @@ async function api(path, options = {}) {
 
   const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
-    if (promptForToken('Authentication required — enter DASHBOARD_TOKEN:')) {
-      return api(path, options);
+    const errBody = await res.json().catch(() => ({}));
+    if (errBody.tokenAuthEnabled && !errBody.roleAuthEnabled) {
+      if (promptForToken('Authentication required — enter DASHBOARD_TOKEN:')) {
+        return api(path, options);
+      }
     }
-    throw new Error('Unauthorised (invalid or missing DASHBOARD_TOKEN)');
+    const err = new Error(errBody.hint || 'Unauthorised — run /dashboard in Discord to sign in');
+    err.status = 401;
+    throw err;
   }
   const body = await res.json().catch(() => ({}));
   if (!res.ok && res.status !== 409) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
+}
+
+async function runAdminCommand(command) {
+  const out = $('admin-cmd-output');
+  out.hidden = false;
+  out.textContent = `Running "${command}"…`;
+  try {
+    const res = await api('/api/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command }),
+    });
+    const icon = res.ok ? '✓' : '⚠️';
+    out.textContent = `${icon} [${command}] ${res.summary}`;
+    banner(`${icon} Command <strong>${esc(command)}</strong>: ${esc(res.summary)}`, res.ok ? 'ok' : 'bad');
+    await load();
+  } catch (err) {
+    out.textContent = `✕ [${command}] ${err.message}`;
+    banner(`Command "${esc(command)}" failed: ${esc(err.message)}`, 'bad');
+  }
 }
 
 function banner(html, kind = '') {
@@ -1494,6 +1658,18 @@ async function load() {
   const days = $('window').value;
   const logLevel = $('log-level').value || 'WARN';
   try {
+    const headers = token ? { 'X-Dashboard-Token': token } : {};
+    const me = await fetch('/api/me', { headers }).then((r) => r.json());
+    updateAdminHeader(me);
+
+    if (me.authRequired && !me.authenticated) {
+      $('subtitle').textContent = 'Admin sign-in required';
+      showAuthGate(me);
+      return;
+    }
+
+    hideAuthGate();
+
     const [health, overview, logs] = await Promise.all([
       fetch('/api/status').then((r) => r.json()),
       api(`/api/overview?days=${days}`),
@@ -1520,6 +1696,10 @@ async function load() {
 
     if (!overview.publish.running && !overview.publish.error && !overview.publish.finishedAt) banner('');
   } catch (err) {
+    if (err.status === 401) {
+      showAuthGate(authInfo || { roleAuthEnabled: true, tokenAuthEnabled: true });
+      return;
+    }
     banner(`Could not load dashboard: ${esc(err.message)}`, 'bad');
   }
 }
@@ -1530,6 +1710,16 @@ for (const btn of document.querySelectorAll('.tab[data-tab]')) {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 }
 
+for (const btn of document.querySelectorAll('[data-admin-cmd]')) {
+  btn.addEventListener('click', () => {
+    const cmd = btn.dataset.adminCmd;
+    if (cmd === 'repair-campus' && !confirm('Relabel provable unknown-campus menu rows in PostgreSQL now?')) {
+      return;
+    }
+    runAdminCommand(cmd);
+  });
+}
+
 $('quick-dispatch').addEventListener('click', () => switchTab('dispatch'));
 $('refresh').addEventListener('click', load);
 $('window').addEventListener('change', load);
@@ -1538,6 +1728,15 @@ $('log-search').addEventListener('input', renderLogs);
 
 $('btn-token').addEventListener('click', () => {
   if (promptForToken()) load();
+});
+
+$('btn-logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  token = '';
+  localStorage.removeItem(TOKEN_KEY);
+  updateTokenButton();
+  banner('Signed out of Control Center.', 'ok');
+  load();
 });
 
 $('auto').addEventListener('change', (e) => {

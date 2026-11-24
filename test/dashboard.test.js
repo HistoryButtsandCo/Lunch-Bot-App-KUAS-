@@ -450,3 +450,191 @@ test('GET /api/preview renders formatted Discord chunks for a campus and date', 
     mock.restoreAll();
   }
 });
+
+// ─── Discord role-based admin auth & /api/command ───────────────────────────
+
+const dashboardAuth = require('../src/dashboard/auth');
+const dashboardCommand = require('../src/commands/dashboard');
+
+test('memberHasDashboardAccess checks DASHBOARD_ADMIN_ROLE_ID accurately', () => {
+  const prevRole = process.env.DASHBOARD_ADMIN_ROLE_ID;
+  const prevAdmin = process.env.BOT_ADMIN_ID;
+  process.env.DASHBOARD_ADMIN_ROLE_ID = '1312000457077686304';
+  delete process.env.BOT_ADMIN_ID;
+
+  try {
+    const adminMember = {
+      id: '747445428731117679',
+      roles: { cache: new Map([['1312000457077686304', { name: 'Admin' }]]) },
+    };
+    const regularMember = {
+      id: '999999999999999999',
+      roles: { cache: new Map([['1111111111111111111', { name: 'Student' }]]) },
+    };
+
+    assert.strictEqual(dashboardAuth.isRoleAuthEnabled(), true);
+    assert.strictEqual(dashboardAuth.memberHasDashboardAccess(adminMember), true);
+    assert.strictEqual(dashboardAuth.memberHasDashboardAccess(regularMember), false);
+  } finally {
+    if (prevRole === undefined) delete process.env.DASHBOARD_ADMIN_ROLE_ID;
+    else process.env.DASHBOARD_ADMIN_ROLE_ID = prevRole;
+    if (prevAdmin === undefined) delete process.env.BOT_ADMIN_ID;
+    else process.env.BOT_ADMIN_ID = prevAdmin;
+  }
+});
+
+test('Discord admin ticket exchange unlocks /api/me and POST /api/command without DASHBOARD_TOKEN', async () => {
+  const prevToken = process.env.DASHBOARD_TOKEN;
+  const prevRole = process.env.DASHBOARD_ADMIN_ROLE_ID;
+  delete process.env.DASHBOARD_TOKEN;
+  process.env.DASHBOARD_ADMIN_ROLE_ID = '1312000457077686304';
+  dashboardAuth._resetForTesting();
+
+  mock.method(db, 'ping', async () => ({ latencyMs: 5 }));
+  mock.method(db, 'getLastSuccessfulDelivery', async () => null);
+  mock.method(db, 'getPipelineHorizon', async () => []);
+  mock.method(db, 'getPoolStats', () => ({ totalCount: 1, idleCount: 1, waitingCount: 0 }));
+
+  server.setClientForTesting({
+    isReady: () => true,
+    user: { tag: 'LunchBot#0001' },
+    ws: { ping: 29 },
+    guilds: { cache: new Map() },
+  });
+
+  function runReq({ method = 'GET', url, headers = {}, body = null }) {
+    return new Promise((resolve, reject) => {
+      const req = Object.assign(new EventEmitter(), {
+        method,
+        url,
+        headers: { host: 'localhost:3000', ...headers },
+        socket: { remoteAddress: '127.0.0.1' },
+      });
+      let statusCode = 0;
+      let resHeaders = {};
+      let rawBody = '';
+      const res = {
+        writeHead(code, h = {}) {
+          statusCode = code;
+          resHeaders = h;
+        },
+        end(chunk) {
+          rawBody = chunk ? String(chunk) : '';
+          resolve({ statusCode, headers: resHeaders, body: rawBody });
+        },
+      };
+      server.handleRequest(req, res).catch(reject);
+      if (body !== null) {
+        req.emit('data', Buffer.from(JSON.stringify(body), 'utf8'));
+      }
+      req.emit('end');
+    });
+  }
+
+  try {
+    // 1. Unauthenticated caller is blocked from /api/command
+    const unauth = await runReq({ method: 'POST', url: '/api/command', body: { command: 'ping-test' } });
+    assert.strictEqual(unauth.statusCode, 401);
+
+    // 2. Mint single-use ticket for an authorised Discord admin
+    const { ticket } = dashboardAuth.createLoginTicket({
+      userId: '747445428731117679',
+      username: 'JB',
+      guildId: '100',
+      roleIds: ['1312000457077686304'],
+    });
+
+    // 3. Exchange ticket -> 302 redirect + HttpOnly session cookie
+    const exchange = await runReq({ url: `/dashboard/auth?ticket=${encodeURIComponent(ticket)}` });
+    assert.strictEqual(exchange.statusCode, 302);
+    assert.strictEqual(exchange.headers.Location, '/dashboard');
+    const setCookie = exchange.headers['Set-Cookie'];
+    assert.match(setCookie, /wfl_admin_session=/);
+    assert.match(setCookie, /HttpOnly/);
+
+    // 4. Ticket cannot be reused
+    const replay = await runReq({ url: `/dashboard/auth?ticket=${encodeURIComponent(ticket)}` });
+    assert.strictEqual(replay.statusCode, 401);
+
+    // 5. Cookie authenticates /api/me and POST /api/command
+    const cookiePair = setCookie.split(';')[0];
+    const meRes = await runReq({ url: '/api/me', headers: { cookie: cookiePair } });
+    assert.strictEqual(meRes.statusCode, 200);
+    const me = JSON.parse(meRes.body);
+    assert.strictEqual(me.authenticated, true);
+    assert.strictEqual(me.writeEnabled, true);
+    assert.strictEqual(me.actor.username, 'JB');
+
+    const cmdRes = await runReq({
+      method: 'POST',
+      url: '/api/command',
+      headers: { cookie: cookiePair, 'content-type': 'application/json' },
+      body: { command: 'ping-test' },
+    });
+    assert.strictEqual(cmdRes.statusCode, 200);
+    const cmdBody = JSON.parse(cmdRes.body);
+    assert.strictEqual(cmdBody.ok, true);
+    assert.match(cmdBody.summary, /DB 5ms/);
+  } finally {
+    mock.restoreAll();
+    server.setClientForTesting(null);
+    dashboardAuth._resetForTesting();
+    if (prevToken === undefined) delete process.env.DASHBOARD_TOKEN;
+    else process.env.DASHBOARD_TOKEN = prevToken;
+    if (prevRole === undefined) delete process.env.DASHBOARD_ADMIN_ROLE_ID;
+    else process.env.DASHBOARD_ADMIN_ROLE_ID = prevRole;
+  }
+});
+
+test('/dashboard slash command blocks non-admins and issues a link button to admins', async () => {
+  const prevRole = process.env.DASHBOARD_ADMIN_ROLE_ID;
+  const prevUrl = process.env.DASHBOARD_PUBLIC_URL;
+  process.env.DASHBOARD_ADMIN_ROLE_ID = '1312000457077686304';
+  process.env.DASHBOARD_PUBLIC_URL = 'https://lunch.kuas.example';
+  dashboardAuth._resetForTesting();
+
+  mock.method(db, 'ping', async () => ({ latencyMs: 4 }));
+
+  try {
+    // Non-admin rejected
+    let deniedPayload = null;
+    await dashboardCommand.execute({
+      inGuild: () => true,
+      guildId: '100',
+      guild: { name: 'KUAS Discord Server' },
+      user: { id: '222', tag: 'student#0001' },
+      member: { id: '222', roles: { cache: new Map() } },
+      reply: async (p) => { deniedPayload = p; },
+    });
+    assert.match(deniedPayload.content, /Access Denied/);
+
+    // Admin gets ephemeral link button
+    let adminPayload = null;
+    await dashboardCommand.execute({
+      inGuild: () => true,
+      guildId: '100',
+      guild: { name: 'KUAS Discord Server' },
+      user: { id: '747445428731117679', username: 'JB', tag: 'JB#0001' },
+      member: {
+        id: '747445428731117679',
+        displayName: 'JB',
+        roles: { cache: new Map([['1312000457077686304', { name: 'Admin' }]]) },
+      },
+      client: { ws: { ping: 35 } },
+      deferReply: async () => {},
+      editReply: async (p) => { adminPayload = p; },
+    });
+    assert.match(adminPayload.content, /Control Center/);
+    assert.strictEqual(adminPayload.components.length, 1);
+    const btnJson = adminPayload.components[0].toJSON().components[0];
+    assert.match(btnJson.url, /^https:\/\/lunch\.kuas\.example\/dashboard\/auth\?ticket=/);
+  } finally {
+    mock.restoreAll();
+    dashboardAuth._resetForTesting();
+    if (prevRole === undefined) delete process.env.DASHBOARD_ADMIN_ROLE_ID;
+    else process.env.DASHBOARD_ADMIN_ROLE_ID = prevRole;
+    if (prevUrl === undefined) delete process.env.DASHBOARD_PUBLIC_URL;
+    else process.env.DASHBOARD_PUBLIC_URL = prevUrl;
+  }
+});
+
