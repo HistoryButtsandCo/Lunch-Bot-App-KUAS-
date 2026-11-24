@@ -242,3 +242,211 @@ test('stack-trace continuation lines attach to the entry above them', () => {
   assert.match(entries[0].message, /at publishMenu/);
   assert.match(entries[0].message, /at process\.run/);
 });
+
+// ─── Connection inspection & manual dispatch runner ──────────────────────────
+
+const { EventEmitter } = require('events');
+const { mock } = require('node:test');
+const db = require('../src/db');
+const publishRunner = require('../src/dashboard/publishRunner');
+const server = require('../src/server');
+
+test('normaliseDispatchOptions validates campus, channelId, date and force', () => {
+  const valid = publishRunner.normaliseDispatchOptions({
+    campus: 'Uzumasa',
+    channelId: '1504156157600600197',
+    date: '2026-08-13',
+    force: true,
+  });
+  assert.strictEqual(valid.ok, true);
+  assert.deepStrictEqual(valid.options, {
+    manual: true,
+    campus: 'Uzumasa',
+    channelId: '1504156157600600197',
+    date: '2026-08-13',
+    force: true,
+  });
+
+  assert.strictEqual(publishRunner.normaliseDispatchOptions({ campus: 'Mars' }).ok, false);
+  assert.strictEqual(publishRunner.normaliseDispatchOptions({ channelId: 'not-a-snowflake' }).ok, false);
+  assert.strictEqual(publishRunner.normaliseDispatchOptions({ date: '13-08-2026' }).ok, false);
+});
+
+test('inspectSubscriptionConnection reports guild, channel and permission status accurately', () => {
+  const subscriptionRow = {
+    guild_id: '100',
+    guild_name: 'KUAS Server',
+    channel_id: '200',
+    channel_name: 'lunch',
+    role_id: '300',
+    campus: 'Uzumasa',
+  };
+
+  // Disconnected client
+  assert.strictEqual(
+    server.inspectSubscriptionConnection(null, subscriptionRow).connectionStatus,
+    'offline'
+  );
+
+  // Bot not in guild
+  const clientNoGuild = {
+    isReady: () => true,
+    guilds: { cache: new Map() },
+  };
+  assert.strictEqual(
+    server.inspectSubscriptionConnection(clientNoGuild, subscriptionRow).connectionStatus,
+    'missing-guild'
+  );
+
+  // Channel missing
+  const clientNoChannel = {
+    isReady: () => true,
+    guilds: {
+      cache: new Map([['100', { name: 'KUAS Server', channels: { cache: new Map() } }]]),
+    },
+    channels: { cache: new Map() },
+  };
+  assert.strictEqual(
+    server.inspectSubscriptionConnection(clientNoChannel, subscriptionRow).connectionStatus,
+    'missing-channel'
+  );
+
+  // Missing SendMessages permission
+  const me = {};
+  const clientNoPerm = {
+    isReady: () => true,
+    guilds: {
+      cache: new Map([
+        [
+          '100',
+          {
+            name: 'KUAS Server',
+            members: { me },
+            channels: {
+              cache: new Map([
+                [
+                  '200',
+                  {
+                    name: 'lunch',
+                    permissionsFor: () => ({ has: (p) => p === 'ViewChannel' }),
+                  },
+                ],
+              ]),
+            },
+          },
+        ],
+      ]),
+    },
+  };
+  assert.strictEqual(
+    server.inspectSubscriptionConnection(clientNoPerm, subscriptionRow).connectionStatus,
+    'missing-permission'
+  );
+
+  // Ready & permitted
+  const clientReady = {
+    isReady: () => true,
+    guilds: {
+      cache: new Map([
+        [
+          '100',
+          {
+            name: 'KUAS Server',
+            members: { me },
+            channels: {
+              cache: new Map([
+                [
+                  '200',
+                  {
+                    name: 'lunch',
+                    permissionsFor: () => ({ has: () => true }),
+                  },
+                ],
+              ]),
+            },
+          },
+        ],
+      ]),
+    },
+  };
+  const readyRes = server.inspectSubscriptionConnection(clientReady, subscriptionRow);
+  assert.strictEqual(readyRes.connectionStatus, 'ready');
+  assert.strictEqual(readyRes.canSend, true);
+});
+
+test('buildStatus reports database latency, Discord WS ping, and pipeline horizon while keeping health contract', async () => {
+  mock.method(db, 'ping', async () => ({ latencyMs: 3 }));
+  mock.method(db, 'getLastSuccessfulDelivery', async () => ({
+    menu_date: '2026-08-12',
+    delivered_at: '2026-08-11T21:00:02.000Z',
+  }));
+  mock.method(db, 'getPipelineHorizon', async () => [
+    { campus: 'Uzumasa', latestDate: '2026-08-21', upcomingItems: 45, upcomingDays: 5 },
+  ]);
+  mock.method(db, 'getPoolStats', () => ({ totalCount: 2, idleCount: 2, waitingCount: 0 }));
+
+  server.setClientForTesting({
+    isReady: () => true,
+    user: { tag: 'LunchBot#0001' },
+    ws: { ping: 38 },
+    guilds: { cache: { size: 4 } },
+  });
+
+  try {
+    const status = await server.buildStatus();
+    assert.strictEqual(status.status, 'online');
+    assert.strictEqual(status.healthy, true);
+    assert.strictEqual(status.discordConnected, true);
+    assert.strictEqual(status.databaseConnected, true);
+    assert.strictEqual(status.guilds, 4);
+    assert.strictEqual(status.botUser, 'LunchBot#0001');
+    assert.strictEqual(status.wsPingMs, 38);
+    assert.strictEqual(status.dbLatencyMs, 3);
+    assert.strictEqual(status.pipelineHorizon.length, 1);
+  } finally {
+    mock.restoreAll();
+    server.setClientForTesting(null);
+  }
+});
+
+test('GET /api/preview renders formatted Discord chunks for a campus and date', async () => {
+  delete process.env.DASHBOARD_TOKEN;
+  mock.method(db, 'getMenuByDate', async () => [
+    {
+      campus: 'Uzumasa',
+      menu_date: '2026-08-18',
+      day_name: 'Tuesday',
+      category: 'Set Meals',
+      subcategory: 'Campus Lunch (1)',
+      dish_name: 'Chicken Nanban',
+      calories: 620,
+      price: null,
+    },
+  ]);
+  mock.method(db, 'getRatingsForDishes', async () => new Map([['Chicken Nanban', { avg: 4.5, count: 4 }]]));
+  mock.method(db, 'getLastKnownPrices', async () => new Map());
+
+  const req = Object.assign(new EventEmitter(), {
+    method: 'GET',
+    url: '/api/preview?campus=Uzumasa&date=2026-08-18',
+    headers: { host: 'localhost:3000' },
+  });
+  let statusCode = 0;
+  let rawBody = '';
+  const res = {
+    writeHead(code) { statusCode = code; },
+    end(chunk) { rawBody = chunk || ''; },
+  };
+
+  try {
+    await server.handleRequest(req, res);
+    assert.strictEqual(statusCode, 200);
+    const parsed = JSON.parse(rawBody);
+    assert.strictEqual(parsed.campus, 'Uzumasa');
+    assert.strictEqual(parsed.itemCount, 1);
+    assert.strictEqual(parsed.chunks.length, 1);
+    assert.match(parsed.chunks[0], /Chicken Nanban/);
+  } finally {
+    mock.restoreAll();
+  }
+});

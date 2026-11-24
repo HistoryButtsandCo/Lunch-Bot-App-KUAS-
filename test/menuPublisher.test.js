@@ -530,3 +530,49 @@ test('a startup does not re-publish a day that already went out', async () => {
 
   assert.strictEqual(sent.length, 0);
 });
+
+// ── Targeted manual dispatch (dashboard & publishNow) ────────────────────────
+
+test('a manual run narrowed to one channel leaves other subscriptions untouched', async () => {
+  const calls = mockDb({
+    subs: [
+      subscription({ guild_id: '111', channel_id: '222', campus: 'Uzumasa' }),
+      subscription({ guild_id: '333', channel_id: '444', campus: 'Uzumasa' }),
+    ],
+  });
+  const { client, sent } = makeClient();
+
+  const summary = await publishMenu(client, { manual: true, channelId: '444' });
+
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(summary.sent, 1);
+  assert.strictEqual(calls.logged.length, 1);
+  assert.strictEqual(calls.logged[0].guildId, '333');
+});
+
+test('force: true bypasses the duplicate guard when re-sending a menu intentionally', async () => {
+  mockDb({ alreadySent: true });
+  const { client, sent } = makeClient();
+
+  const summary = await publishMenu(client, { manual: true, force: true });
+
+  assert.strictEqual(sent.length, 1, 'force re-sends even when already delivered today');
+  assert.strictEqual(summary.sent, 1);
+});
+
+test('an explicit date option fetches that date via getMenuByDate and logs against it', async () => {
+  const customDate = '2026-08-14';
+  const calls = mockDb();
+  mock.method(db, 'getMenuByDate', async (date, campus) =>
+    menuItems({ menu_date: date, day_name: 'Friday', campus })
+  );
+  const { client, sent } = makeClient();
+
+  const summary = await publishMenu(client, { manual: true, date: customDate });
+
+  assert.strictEqual(summary.date, customDate);
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(calls.logged[0].menuDate, customDate);
+  const customId = sent[0].components[0].components[0].data.custom_id;
+  assert.strictEqual(customId, `rate_menu_open:Uzumasa:${customDate}`);
+});

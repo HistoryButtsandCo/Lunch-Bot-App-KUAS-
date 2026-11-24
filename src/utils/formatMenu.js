@@ -15,17 +15,18 @@ const { buildFooter, studentPrice } = require('../config/cafeteria');
 
 // Transitional fallback. Uzumasa's scraper does not yet extract price, so until
 // it does these student prices stand in for rows with a NULL price. They are
-// already post-discount, so no tier is applied to them. Delete this table once
-// the Uzumasa workflow has been carrying prices for a full menu cycle.
+// already post-discount — both the association campaign and the ¥70 prefecture
+// subsidy — so no tier is applied to them. Delete this table once the Uzumasa
+// workflow has been carrying prices for a full menu cycle.
 const UZUMASA_FALLBACK_PRICES = {
-  'Campus Lunch (1)': 330,
-  'Campus Lunch (2)': 330,
+  'Campus Lunch (1)': 260,
+  'Campus Lunch (2)': 260,
   'Halal':            400,
-  'A La Carte':       330,
-  'Curry Set':        330,
-  'Curry':            330,
-  'Ramen':            250,
-  'Udon and Soba':    200,
+  'A La Carte':       260,
+  'Curry Set':        260,
+  'Curry':            260,
+  'Ramen':            180,
+  'Udon and Soba':    130,
   'Side Dish A':       70,
   'Side Dish B':       70,
   'Side Dish C':       70,
@@ -110,6 +111,7 @@ const CAMPUS_CONFIG = {
     showSetMealNote: true,
     footerText: buildFooter([
       'Prices are part of a cafeteria discount campaign sponsored by the Student Guardian Association and are available to students only. Faculty and staff members are not eligible for this discounted price.',
+      'Main dishes carry a further ¥70 off under a Kyoto Prefecture subsidy campaign, again for students only. Side dishes and Halal are excluded from it.',
     ]),
     categoryLabels: null,
     menuOrderHasLabels: false,

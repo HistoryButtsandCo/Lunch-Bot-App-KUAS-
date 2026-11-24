@@ -47,28 +47,34 @@ function buildFooter(campusNotes = []) {
 /**
  * Cafeteria Discount Campaign — students only, and Uzumasa only.
  *
- * Uzumasa students pay the menu's base price minus the amounts below, per the
- * campaign notice: 100 yen off lunch and à la carte, 50 yen off curry and
- * noodles, nothing off sides. Verified against the 2026-08-18 PDF, where the
- * base price minus the tier below reproduces every price this bot had
- * hardcoded (¥430→330, ¥380→330, ¥300→250, ¥250→200, ¥70→70).
+ * Two campaigns stack on Uzumasa's main dishes:
+ *   - The Student Guardian Association's: 100 yen off lunch and à la carte,
+ *     50 yen off curry and noodles, nothing off sides.
+ *   - Kyoto Prefecture's subsidy, running since 2026-11: a further 70 yen off
+ *     every main dish. Side dishes are ¥70 and would come out free, and Halal is
+ *     a flat price at the payment machine, so neither takes the subsidy.
+ *
+ * The totals below are what a student pays less than the listed price. They were
+ * verified against the 2026-08-18 PDF, where the listed price minus the tier
+ * reproduced every price this bot had hardcoded (¥430→330→260, ¥380→330→260,
+ * ¥300→250→180, ¥250→200→130, ¥70→70).
  *
  * Note the PDF prints TWO prices for Set Meals and A La Carte (e.g. 430 above
  * 500). The lower is the visitor/staff price — confirmed at the cafeteria: a
- * set meal is ¥430 for visitors and staff, and students pay ¥330 after the
- * ¥100 campaign discount. The scraper is instructed to take the lower of the
- * two; what the higher figure represents is still unknown, but it is never
- * used. Curry, Ramen and Udon/Soba print a single price.
+ * set meal is ¥430 for visitors and staff, and students pay ¥260 after both
+ * campaigns. The scraper is instructed to take the lower of the two; what the
+ * higher figure represents is still unknown, but it is never used. Curry, Ramen
+ * and Udon/Soba print a single price.
  *
  * Halal is not derived at all — it is a flat ¥400, see FIXED_STUDENT_PRICES.
  *
- * Kameoka does not run the campaign, so its printed price is already what a
+ * Kameoka does not run either campaign, so its printed price is already what a
  * student pays — every tier there is zero.
  *
  * Keyed by the `category` column in menu_items. A category with no entry is
  * treated as undiscounted.
  */
-const STUDENT_DISCOUNT = {
+const ASSOCIATION_OFF = {
   Uzumasa: {
     'Set Meals': 100,
     'A La Carte': 100,
@@ -84,6 +90,27 @@ const STUDENT_DISCOUNT = {
     Ramen: 0,
     'Side Dish': 0,
   },
+};
+
+/** Kyoto Prefecture's subsidy, per campus. Kameoka does not take part. */
+const PREFECTURE_SUBSIDY = { Uzumasa: 70, Kameoka: 0 };
+
+/** Categories the subsidy does not touch: ¥70 sides, and the flat-price Halal. */
+const SUBSIDY_EXEMPT = new Set(['Sides', 'Halal']);
+
+/** Association tier plus the prefecture subsidy where it applies. */
+function addSubsidy(campus, tiers) {
+  const subsidy = PREFECTURE_SUBSIDY[campus] || 0;
+  const out = {};
+  for (const [category, amount] of Object.entries(tiers)) {
+    out[category] = SUBSIDY_EXEMPT.has(category) ? amount : amount + subsidy;
+  }
+  return out;
+}
+
+const STUDENT_DISCOUNT = {
+  Uzumasa: addSubsidy('Uzumasa', ASSOCIATION_OFF.Uzumasa),
+  Kameoka: addSubsidy('Kameoka', ASSOCIATION_OFF.Kameoka),
 };
 
 /**
