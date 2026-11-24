@@ -518,7 +518,117 @@ async function getMenuItemsBetween(fromDate, toDate) {
 
 /** Cheap liveness probe for the health endpoint. Throws if the DB is unreachable. */
 async function ping() {
+  const started = Date.now();
   await pool.query('SELECT 1');
+  return { latencyMs: Date.now() - started };
+}
+
+/** Snapshot of pg connection-pool counters for the health/connection panel. */
+function getPoolStats() {
+  if (!pool) return { totalCount: 0, idleCount: 0, waitingCount: 0 };
+  return {
+    totalCount: pool.totalCount ?? 0,
+    idleCount: pool.idleCount ?? 0,
+    waitingCount: pool.waitingCount ?? 0,
+  };
+}
+
+/**
+ * Per-campus summary of scraped menu rows from `fromDate` onward — shows how
+ * far ahead the n8n pipeline has populated PostgreSQL.
+ */
+async function getPipelineHorizon(fromDate = todayCampus()) {
+  try {
+    const result = await pool.query(
+      `SELECT campus,
+              MAX(menu_date)                    AS latest_date,
+              COUNT(*)::int                     AS upcoming_items,
+              COUNT(DISTINCT menu_date)::int    AS upcoming_days
+         FROM menu_items
+        WHERE menu_date::date >= $1::date
+        GROUP BY campus
+        ORDER BY campus`,
+      [fromDate]
+    );
+    return result.rows.map((r) => ({
+      campus: r.campus,
+      latestDate: r.latest_date,
+      upcomingItems: r.upcoming_items,
+      upcomingDays: r.upcoming_days,
+    }));
+  } catch (err) {
+    logger.error(`Error fetching pipeline horizon: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Aggregate dish-rating leaderboard and totals for the dashboard ratings view.
+ */
+async function getRatingsSummary(limit = 12) {
+  try {
+    const [totalsRes, topRes, bottomRes] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::int                    AS total_ratings,
+                COUNT(DISTINCT dish_name)::int   AS distinct_dishes,
+                COUNT(DISTINCT user_id)::int     AS distinct_voters,
+                MAX(rated_at)                    AS last_rated_at
+           FROM dish_ratings`
+      ),
+      pool.query(
+        `SELECT COALESCE(campus, 'Uzumasa')      AS campus,
+                dish_name,
+                ROUND(AVG(rating)::numeric, 2)   AS avg_rating,
+                COUNT(*)::int                    AS rating_count,
+                MAX(menu_date)                   AS last_menu_date
+           FROM dish_ratings
+          GROUP BY COALESCE(campus, 'Uzumasa'), dish_name
+          ORDER BY AVG(rating) DESC, COUNT(*) DESC, dish_name ASC
+          LIMIT $1`,
+        [limit]
+      ),
+      pool.query(
+        `SELECT COALESCE(campus, 'Uzumasa')      AS campus,
+                dish_name,
+                ROUND(AVG(rating)::numeric, 2)   AS avg_rating,
+                COUNT(*)::int                    AS rating_count,
+                MAX(menu_date)                   AS last_menu_date
+           FROM dish_ratings
+          GROUP BY COALESCE(campus, 'Uzumasa'), dish_name
+          ORDER BY AVG(rating) ASC, COUNT(*) DESC, dish_name ASC
+          LIMIT $1`,
+        [limit]
+      ),
+    ]);
+
+    const t = totalsRes.rows[0] || {};
+    const mapDish = (r) => ({
+      campus: r.campus,
+      dishName: r.dish_name,
+      avgRating: parseFloat(r.avg_rating),
+      ratingCount: r.rating_count,
+      lastMenuDate: r.last_menu_date,
+    });
+
+    return {
+      totalRatings: t.total_ratings || 0,
+      distinctDishes: t.distinct_dishes || 0,
+      distinctVoters: t.distinct_voters || 0,
+      lastRatedAt: t.last_rated_at || null,
+      topDishes: topRes.rows.map(mapDish),
+      lowestDishes: bottomRes.rows.map(mapDish),
+    };
+  } catch (err) {
+    logger.error(`Error fetching ratings summary: ${err.message}`);
+    return {
+      totalRatings: 0,
+      distinctDishes: 0,
+      distinctVoters: 0,
+      lastRatedAt: null,
+      topDishes: [],
+      lowestDishes: [],
+    };
+  }
 }
 
 /**
@@ -652,12 +762,15 @@ module.exports = {
   getSubscriptionByGuildId,
   // health & data quality
   ping,
+  getPoolStats,
+  getPipelineHorizon,
   getLastSuccessfulDelivery,
   getMenuItemsBetween,
   // admin dashboard
   getDeliveriesBetween,
   getMenuCountsBetween,
   getMenuItemsForDate,
+  getRatingsSummary,
   // ratings
   upsertRating,
   getRatingsForDishes,
